@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-canvas text-ink font-body antialiased;
+}
+
+::selection {
+  background: #2F5DE822;
+}
