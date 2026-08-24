@@ -10,11 +10,11 @@ API layer references GSTNMockAdapter directly.
 from __future__ import annotations
 
 from app.adapters.base import PortalAdapter
+from app.adapters.datagovin_client import DataGovInMCAAdapter
 from app.adapters.mock_adapters import (
     BlacklistMockAdapter,
     DigiLockerMockAdapter,
     GSTNMockAdapter,
-    MCAMockAdapter,
     NSICMockAdapter,
     UdyamMockAdapter,
 )
@@ -35,7 +35,7 @@ CLAIM_AUTHORITY_MAP = {
 # to move from mock to real with zero changes anywhere else.
 ADAPTER_REGISTRY: dict[str, PortalAdapter] = {
     "GSTN": GSTNMockAdapter(),
-    "MCA": MCAMockAdapter(),
+    "MCA": DataGovInMCAAdapter(),
     "NSIC": NSICMockAdapter(),
     "UDYAM": UdyamMockAdapter(),
     "DIGILOCKER": DigiLockerMockAdapter(),

@@ -6,7 +6,9 @@ import OfficerDashboard from "./pages/OfficerDashboard.jsx";
 import BidDetail from "./pages/BidDetail.jsx";
 import AuditTrail from "./pages/AuditTrail.jsx";
 import BidderTenders from "./pages/BidderTenders.jsx";
-import BidderReadiness from "./pages/BidderReadiness.jsx";
+import TenderDetail from "./pages/TenderDetail.jsx";
+import BidderSubmissionFlow from "./pages/BidderSubmissionFlow.jsx";
+import BidderStatusTracker from "./pages/BidderStatusTracker.jsx";
 
 function RequireRole({ role, children }) {
   const { session } = useAuth();
@@ -20,12 +22,18 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={<Login />} />
 
+      {/* Officer Portal */}
       <Route path="/officer" element={<RequireRole role="officer"><OfficerDashboard /></RequireRole>} />
       <Route path="/officer/bids/:bidId" element={<RequireRole role="officer"><BidDetail /></RequireRole>} />
       <Route path="/officer/audit" element={<RequireRole role="officer"><AuditTrail /></RequireRole>} />
 
+      {/* Bidder Portal (Complete Connected Workflow) */}
       <Route path="/bidder" element={<RequireRole role="bidder"><BidderTenders /></RequireRole>} />
-      <Route path="/bidder/readiness" element={<RequireRole role="bidder"><BidderReadiness /></RequireRole>} />
+      <Route path="/bidder/tenders/:tenderId" element={<RequireRole role="bidder"><TenderDetail /></RequireRole>} />
+      <Route path="/bidder/apply/:bidId" element={<RequireRole role="bidder"><BidderSubmissionFlow /></RequireRole>} />
+      <Route path="/bidder/bids/:bidId/submit" element={<RequireRole role="bidder"><BidderSubmissionFlow /></RequireRole>} />
+      <Route path="/bidder/readiness" element={<RequireRole role="bidder"><BidderSubmissionFlow /></RequireRole>} />
+      <Route path="/bidder/status/:bidId" element={<RequireRole role="bidder"><BidderStatusTracker /></RequireRole>} />
 
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>

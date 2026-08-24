@@ -6,13 +6,17 @@ import { api } from "../lib/api.js";
 
 export default function OfficerDashboard() {
   const [bids, setBids] = useState(null);
+  const [filterRisk, setFilterRisk] = useState("ALL");
+  const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState("");
+  const [lastSync, setLastSync] = useState(new Date());
   const navigate = useNavigate();
 
   async function load() {
     try {
       const data = await api.officerBids();
       setBids(data);
+      setLastSync(new Date());
     } catch (e) {
       setError(e.message);
     }
@@ -20,12 +24,11 @@ export default function OfficerDashboard() {
 
   useEffect(() => {
     load();
-    const refreshTimer = window.setInterval(load, 4000);
+    const refreshTimer = window.setInterval(load, 3000);
     return () => window.clearInterval(refreshTimer);
   }, []);
 
   async function evaluateAll() {
-    setBids(null);
     for (const b of bids || []) {
       await api.officerEvaluate(b.bid_id);
     }
@@ -36,82 +39,187 @@ export default function OfficerDashboard() {
     ? {
         total: bids.length,
         high: bids.filter((b) => b.risk_level === "HIGH").length,
+        medium: bids.filter((b) => b.risk_level === "MEDIUM").length,
+        low: bids.filter((b) => b.risk_level === "LOW").length,
         pending: bids.filter((b) => b.decision === "PENDING").length,
+        verified: bids.filter((b) => b.decision === "VERIFIED").length,
+        non_compliant: bids.filter((b) => b.decision === "NON_COMPLIANT").length,
       }
     : null;
 
+  const filteredBids = (bids || []).filter((b) => {
+    if (filterRisk !== "ALL" && b.risk_level !== filterRisk) return false;
+    if (
+      searchQuery &&
+      !b.bidder_org_name.toLowerCase().includes(searchQuery.toLowerCase()) &&
+      !b.bid_id.toLowerCase().includes(searchQuery.toLowerCase())
+    ) {
+      return false;
+    }
+    return true;
+  });
+
   return (
     <Shell>
-      <div className="flex items-start justify-between mb-6">
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
         <div>
-          <h1 className="font-display text-2xl font-semibold text-ink">GeM/2026/T-101</h1>
-          <p className="text-sm text-slate mt-1">Supply of Industrial Textile Materials — Chennai Petroleum Corporation Limited</p>
+          <div className="inline-flex items-center gap-2 mb-1">
+            <span className="text-xs font-semibold uppercase tracking-wider text-accent bg-accent/10 px-2.5 py-0.5 rounded-full">
+              Procurement Officer Workspace
+            </span>
+            <span className="text-xs text-slate">MoPNG / CPCL Sentinel</span>
+          </div>
+          <h1 className="font-display text-2xl font-bold text-ink">Bid Verification & Evaluation Queue</h1>
+          <p className="text-sm text-slate mt-0.5">
+            Real-time compliance monitoring, risk assessment, and decision gating for GeM procurement.
+          </p>
         </div>
-        <button
-          onClick={evaluateAll}
-          className="bg-accent hover:bg-accent2 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
-        >
-          Run verification on all bids
-        </button>
+
+        <div className="flex items-center gap-3">
+          <div className="text-xs text-slate flex items-center gap-1.5 bg-card border border-line px-3 py-2 rounded-lg">
+            <span className="w-2 h-2 rounded-full bg-pass animate-pulse" />
+            <span>Synced: {lastSync.toLocaleTimeString()}</span>
+          </div>
+          <button
+            onClick={evaluateAll}
+            className="bg-accent hover:bg-accent2 text-white text-xs font-semibold px-4 py-2.5 rounded-lg shadow-sm transition-colors"
+          >
+            ⚡ Re-run Verification on All
+          </button>
+        </div>
       </div>
 
+      {/* Summary KPI Cards */}
       {summary && (
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <SummaryCard label="Total bids received" value={summary.total} />
-          <SummaryCard label="High-risk bids" value={summary.high} accent="fail" />
-          <SummaryCard label="Awaiting officer decision" value={summary.pending} accent="review" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-card border border-line rounded-card p-4 shadow-xs">
+            <div className="text-xs text-slate font-medium">Total Bids In Queue</div>
+            <div className="text-2xl font-bold text-ink mt-1 font-mono">{summary.total}</div>
+            <div className="text-[11px] text-slate mt-1">{summary.pending} awaiting officer decision</div>
+          </div>
+
+          <div className="bg-card border border-line rounded-card p-4 shadow-xs">
+            <div className="text-xs font-medium text-fail">High Risk Signals</div>
+            <div className="text-2xl font-bold text-fail mt-1 font-mono">{summary.high}</div>
+            <div className="text-[11px] text-slate mt-1">Requires forensic review</div>
+          </div>
+
+          <div className="bg-card border border-line rounded-card p-4 shadow-xs">
+            <div className="text-xs font-medium text-review">Pending Officer Decision</div>
+            <div className="text-2xl font-bold text-review mt-1 font-mono">{summary.pending}</div>
+            <div className="text-[11px] text-slate mt-1">Human-in-the-loop gating</div>
+          </div>
+
+          <div className="bg-card border border-line rounded-card p-4 shadow-xs">
+            <div className="text-xs font-medium text-pass">Decided / Verified</div>
+            <div className="text-2xl font-bold text-pass mt-1 font-mono">{summary.verified}</div>
+            <div className="text-[11px] text-slate mt-1">{summary.non_compliant} marked non-compliant</div>
+          </div>
         </div>
       )}
 
-      <div className="bg-card border border-line rounded-card overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-line flex items-center justify-between">
-          <span className="text-sm font-medium text-ink">Bids — sorted by risk</span>
+      {/* Main Table Card */}
+      <div className="bg-card border border-line rounded-card overflow-hidden shadow-sm">
+        {/* Table Filters Bar */}
+        <div className="px-5 py-3.5 border-b border-line bg-canvas/40 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-ink uppercase tracking-wider">Filter Risk:</span>
+            {["ALL", "HIGH", "MEDIUM", "LOW"].map((r) => (
+              <button
+                key={r}
+                onClick={() => setFilterRisk(r)}
+                className={`text-xs px-2.5 py-1 rounded-md font-semibold transition-all ${
+                  filterRisk === r
+                    ? "bg-accent text-white shadow-xs"
+                    : "bg-white border border-line text-slate hover:text-ink"
+                }`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+
+          <div className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search bidder or bid ID…"
+              className="bg-white border border-line rounded-lg px-3 py-1.5 text-xs text-ink focus:outline-none focus:border-accent w-56"
+            />
+          </div>
         </div>
 
-        {!bids && !error && <div className="px-5 py-10 text-center text-sm text-slate">Loading bids…</div>}
-        {error && <div className="px-5 py-6 text-sm text-fail">{error} — is the backend running on :8000?</div>}
+        {!bids && !error && <div className="px-5 py-12 text-center text-sm text-slate">Loading real-time bid queue…</div>}
+        {error && <div className="px-5 py-6 text-sm text-fail">{error}</div>}
 
         {bids && (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-slate uppercase tracking-wide border-b border-line">
-                <th className="px-5 py-3 font-medium">Bidder</th>
-                <th className="px-5 py-3 font-medium">Tender</th>
-                <th className="px-5 py-3 font-medium">Compliance</th>
-                <th className="px-5 py-3 font-medium">Risk</th>
-                <th className="px-5 py-3 font-medium">Decision</th>
-                <th className="px-5 py-3 font-medium"></th>
+          <table className="w-full text-xs text-left">
+            <thead className="bg-canvas border-b border-line text-slate uppercase font-semibold">
+              <tr>
+                <th className="px-5 py-3">Bidder Entity</th>
+                <th className="px-5 py-3">GSTIN / Identifiers</th>
+                <th className="px-5 py-3">Tender</th>
+                <th className="px-5 py-3">Submission</th>
+                <th className="px-5 py-3">Compliance</th>
+                <th className="px-5 py-3">Risk Level</th>
+                <th className="px-5 py-3">Officer Decision</th>
+                <th className="px-5 py-3 text-right">Action</th>
               </tr>
             </thead>
-            <tbody>
-              {bids.map((b) => (
-                <tr
-                  key={b.bid_id}
-                  className="border-b border-line last:border-0 hover:bg-canvas cursor-pointer transition-colors"
-                  onClick={() => navigate(`/officer/bids/${b.bid_id}`)}
-                >
-                  <td className="px-5 py-3.5 font-medium text-ink">{b.bidder_org_name}</td>
-                  <td className="px-5 py-3.5 text-xs text-slate">{b.tender?.title || "—"}</td>
-                  <td className="px-5 py-3.5"><StatusBadge status={b.compliance_status} /></td>
-                  <td className="px-5 py-3.5">{b.risk_level ? <StatusBadge status={b.risk_level} /> : <span className="text-slate text-xs">Not run</span>}</td>
-                  <td className="px-5 py-3.5"><StatusBadge status={b.decision} /></td>
-                  <td className="px-5 py-3.5 text-right text-accent text-xs font-medium">Review →</td>
+            <tbody className="divide-y divide-line">
+              {filteredBids.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-5 py-8 text-center text-slate">
+                    No bids match the active filters.
+                  </td>
                 </tr>
-              ))}
+              ) : (
+                filteredBids.map((b) => (
+                  <tr
+                    key={b.bid_id}
+                    className="hover:bg-canvas/60 cursor-pointer transition-colors"
+                    onClick={() => navigate(`/officer/bids/${b.bid_id}`)}
+                  >
+                    <td className="px-5 py-3.5">
+                      <div className="font-bold text-ink">{b.bidder_org_name}</div>
+                      <div className="text-[11px] font-mono text-slate mt-0.5">ID: {b.bid_id}</div>
+                    </td>
+                    <td className="px-5 py-3.5 font-mono text-[11px] text-slate">
+                      {b.gstin || "—"}
+                    </td>
+                    <td className="px-5 py-3.5 text-slate max-w-[200px] truncate">
+                      {b.tender?.title || "—"}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <StatusBadge status={b.status} />
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <StatusBadge status={b.compliance_status} />
+                    </td>
+                    <td className="px-5 py-3.5">
+                      {b.risk_level ? (
+                        <div className="flex items-center gap-1.5">
+                          <StatusBadge status={b.risk_level} />
+                          <span className="font-mono text-[11px] text-slate font-medium">({b.risk_score})</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate">Not evaluated</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <StatusBadge status={b.decision} />
+                    </td>
+                    <td className="px-5 py-3.5 text-right font-semibold text-accent hover:underline">
+                      Review Bid →
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         )}
       </div>
     </Shell>
-  );
-}
-
-function SummaryCard({ label, value, accent }) {
-  const color = accent === "fail" ? "text-fail" : accent === "review" ? "text-review" : "text-ink";
-  return (
-    <div className="bg-card border border-line rounded-card px-5 py-4">
-      <div className="text-xs text-slate mb-1">{label}</div>
-      <div className={`font-display text-2xl font-semibold ${color}`}>{value}</div>
-    </div>
   );
 }
