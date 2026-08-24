@@ -15,6 +15,7 @@ const STYLES = {
   REVIEW: "bg-reviewBg text-review",
   WEAK_EVIDENCE: "bg-reviewBg text-review",
   NEEDS_CLARIFICATION: "bg-reviewBg text-review",
+  CLARIFICATION_REQUIRED: "bg-reviewBg text-review",
   COMPLIANT_WITH_FLAGS: "bg-reviewBg text-review",
   MEDIUM: "bg-reviewBg text-review",
   PENDING: "bg-reviewBg text-review",

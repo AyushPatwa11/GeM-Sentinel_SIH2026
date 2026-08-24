@@ -13,7 +13,7 @@ from typing import Any, Dict, List
 
 from app.adapters.base import VerificationClaim
 from app.adapters.mock_adapters import BlacklistMockAdapter, GSTNMockAdapter
-from app.demo_data import BIDS, CLAUSES
+from app.demo_data import BIDS, CLAUSES_BY_TENDER_VERSION
 from app.services.risk.scoring import RiskSignal, score_bid
 from app.services.rules.evaluator import aggregate_bid_status, evaluate_clause
 from app.services.rules.schema import ClauseStatus, Condition, Fact, LogicNode, VerificationStatus
@@ -92,7 +92,7 @@ async def evaluate_bid(bid_id: str) -> Dict[str, Any]:
     clause_outcomes: List[tuple[bool, ClauseStatus]] = []
     risk_signals: List[RiskSignal] = []
 
-    for clause in CLAUSES:
+    for clause in CLAUSES_BY_TENDER_VERSION[bid["tender_version_id"]]:
         node = _dict_to_node(clause["logic_tree"])
 
         if clause.get("ambiguity_flag"):

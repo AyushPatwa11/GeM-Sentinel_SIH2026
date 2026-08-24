@@ -35,6 +35,31 @@ TENDER_VERSION = {
     "published_at": datetime(2026, 7, 1, tzinfo=timezone.utc).isoformat(),
 }
 
+# Multiple published tenders make the bidder workflow exercise the real
+# tender -> bid relationship instead of treating seeded bidder scenarios as
+# if they were different tenders.
+TENDERS = {
+    TENDER_ID: TENDER,
+    "tender-102": {
+        "id": "tender-102",
+        "title": "Supply of Electrical Maintenance Components — GeM/2026/T-102",
+        "organization": "Chennai Petroleum Corporation Limited",
+        "status": "published",
+    },
+}
+
+TENDER_VERSIONS = {
+    TENDER_VERSION_ID: TENDER_VERSION,
+    "tv-102-v1": {
+        "id": "tv-102-v1",
+        "tender_id": "tender-102",
+        "version_number": "1.0",
+        "is_corrigendum": False,
+        "precedence_policy_version": "default_v1",
+        "published_at": datetime(2026, 7, 4, tzinfo=timezone.utc).isoformat(),
+    },
+}
+
 # Logic trees follow app.services.rules.schema exactly.
 CLAUSES = [
     {
@@ -121,6 +146,45 @@ CLAUSES = [
         },
     },
 ]
+
+# The second tender intentionally uses a separate requirement set. The same
+# evaluator consumes both sets, so tender-specific rules are never inferred
+# from a frontend label.
+CLAUSES_BY_TENDER_VERSION = {
+    TENDER_VERSION_ID: CLAUSES,
+    "tv-102-v1": [
+        {
+            "id": "clause-102-gst-pan",
+            "tender_version_id": "tv-102-v1",
+            "raw_text": "Bidder must possess a valid GST registration AND a valid PAN.",
+            "category": "STATUTORY",
+            "mandatory": True,
+            "grounding_verified": True,
+            "logic_tree": {
+                "type": "AND",
+                "children": [
+                    {"type": "LEAF", "condition": {"field": "gst_valid", "operator": "==", "value": True}},
+                    {"type": "LEAF", "condition": {"field": "pan_valid", "operator": "==", "value": True}},
+                ],
+            },
+        },
+        {
+            "id": "clause-102-emd",
+            "tender_version_id": "tv-102-v1",
+            "raw_text": "EMD of ₹25,000 is mandatory unless the bidder qualifies for MSME exemption.",
+            "category": "FINANCIAL",
+            "mandatory": True,
+            "grounding_verified": True,
+            "logic_tree": {
+                "type": "LEAF",
+                "condition": {"field": "emd_paid", "operator": "==", "value": True},
+                "exceptions": [
+                    {"applies_if": {"field": "msme_exemption", "operator": "==", "value": True}, "waives": True}
+                ],
+            },
+        },
+    ],
+}
 
 # Bid-level extracted facts. Each fact carries evidence + confidence exactly
 # as app/services/rules/schema.Fact and app/models ExtractedFact expect.

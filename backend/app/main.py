@@ -9,14 +9,15 @@ only this file's internals, not the frontend or the contract.
 from __future__ import annotations
 
 import uuid
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from app.demo_data import BIDS, CLAUSES, TENDER, TENDER_VERSION
+from app.demo_data import BIDS, CLAUSES_BY_TENDER_VERSION, TENDER, TENDER_VERSION, TENDERS, TENDER_VERSIONS
 from app.services.evaluation import evaluate_bid
 
 app = FastAPI(title="GeM Sentinel API", version="0.1.0")
@@ -32,6 +33,7 @@ app.add_middleware(
 _evaluation_cache: dict[str, dict] = {}
 _decisions: dict[str, dict] = {}
 _audit_log: list[dict] = []
+_uploaded_documents: dict[str, list[dict]] = {}
 
 
 def _audit(event_type: str, entity_id: str, payload: dict):
@@ -44,6 +46,12 @@ def _audit(event_type: str, entity_id: str, payload: dict):
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
     )
+
+
+def _tender_for_bid(bid: dict) -> dict:
+    version = TENDER_VERSIONS[bid["tender_version_id"]]
+    tender = TENDERS[version["tender_id"]]
+    return {**tender, "version": version["version_number"]}
 
 
 # =========================================================
@@ -73,14 +81,15 @@ def login(body: LoginRequest):
 
 @app.get("/api/officer/tenders")
 def list_tenders():
-    return [{**TENDER, "version": TENDER_VERSION["version_number"]}]
+    return [{**tender, "version": TENDER_VERSIONS[next(v for v in TENDER_VERSIONS if TENDER_VERSIONS[v]["tender_id"] == tender_id)]["version_number"]} for tender_id, tender in TENDERS.items()]
 
 
 @app.get("/api/officer/tenders/{tender_id}/clauses")
 def get_clauses(tender_id: str):
-    if tender_id != TENDER["id"]:
+    version = next((version for version in TENDER_VERSIONS.values() if version["tender_id"] == tender_id), None)
+    if version is None:
         raise HTTPException(404, "tender not found")
-    return CLAUSES
+    return CLAUSES_BY_TENDER_VERSION[version["id"]]
 
 
 @app.get("/api/officer/bids")
@@ -92,7 +101,8 @@ def list_bids():
             {
                 "bid_id": bid_id,
                 "bidder_org_name": bid["bidder_org_name"],
-                "status": bid["status"],
+                "tender": _tender_for_bid(bid),
+                "status": bid["status"].upper(),
                 "compliance_status": cached["compliance_status"] if cached else "NOT_EVALUATED",
                 "risk_level": cached["risk_assessment"]["risk_level"] if cached else None,
                 "decision": _decisions.get(bid_id, {}).get("final_decision", "PENDING"),
@@ -149,6 +159,11 @@ async def decide(bid_id: str, body: DecisionRequest):
         "decided_at": datetime.now(timezone.utc).isoformat(),
     }
     _decisions[bid_id] = decision
+    BIDS[bid_id]["status"] = {
+        "VERIFIED": "VERIFIED",
+        "NON_COMPLIANT": "NON_COMPLIANT",
+        "NEEDS_CLARIFICATION": "CLARIFICATION_REQUIRED",
+    }[body.final_decision]
     _audit("OFFICER_DECISION", bid_id, decision)
     return decision
 
@@ -164,17 +179,57 @@ def get_audit(bid_id: str):
 
 @app.get("/api/bidder/tenders")
 def bidder_tenders():
-    return [{**TENDER, "version": TENDER_VERSION["version_number"]}]
+    return list_tenders()
 
 
 @app.get("/api/bidder/tenders/{tender_id}/requirements")
 def bidder_requirements(tender_id: str):
-    if tender_id != TENDER["id"]:
+    version = next((version for version in TENDER_VERSIONS.values() if version["tender_id"] == tender_id), None)
+    if version is None:
         raise HTTPException(404, "tender not found")
     return [
         {"clause_id": c["id"], "raw_text": c["raw_text"], "category": c["category"], "mandatory": c["mandatory"]}
-        for c in CLAUSES
+        for c in CLAUSES_BY_TENDER_VERSION[version["id"]]
     ]
+
+
+@app.get("/api/bidder/bids")
+def bidder_bids():
+    return [
+        {
+            "id": bid_id,
+            "status": bid["status"],
+            "bidder_org_name": bid["bidder_org_name"],
+            "tender": _tender_for_bid(bid),
+        }
+        for bid_id, bid in BIDS.items()
+    ]
+
+
+@app.post("/api/bidder/tenders/{tender_id}/bids")
+def create_bid_draft(tender_id: str):
+    version = next((version for version in TENDER_VERSIONS.values() if version["tender_id"] == tender_id), None)
+    if version is None or TENDERS[tender_id]["status"] != "published":
+        raise HTTPException(404, "published tender not found")
+
+    existing = next((bid_id for bid_id, bid in BIDS.items() if bid.get("tender_version_id") == version["id"] and bid.get("created_from_bidder_portal")), None)
+    if existing:
+        return {"id": existing, "status": BIDS[existing]["status"], "tender": _tender_for_bid(BIDS[existing])}
+
+    template = deepcopy(BIDS["bid-northline"])
+    bid_id = f"bid-draft-{uuid.uuid4().hex[:8]}"
+    template.update(
+        {
+            "id": bid_id,
+            "tender_version_id": version["id"],
+            "status": "DRAFT",
+            "documents": [],
+            "created_from_bidder_portal": True,
+        }
+    )
+    BIDS[bid_id] = template
+    _audit("BID_DRAFT_CREATED", bid_id, {"tender_id": tender_id, "tender_version_id": version["id"]})
+    return {"id": bid_id, "status": template["status"], "tender": _tender_for_bid(template)}
 
 
 @app.get("/api/bidder/bids/{bid_id}/readiness")
@@ -200,7 +255,110 @@ async def readiness(bid_id: str):
         }[c["status"]]
         items.append({"clause_id": c["clause_id"], "requirement_summary": c["clause_text"], "status": label})
 
-    return {"readiness_percent": readiness_percent, "items": items}
+    return {"readiness_percent": readiness_percent, "items": items, "tender": _tender_for_bid(BIDS[bid_id])}
+
+
+@app.get("/api/bidder/bids/{bid_id}/documents")
+def bidder_documents(bid_id: str):
+    if bid_id not in BIDS:
+        raise HTTPException(404, "bid not found")
+    return _uploaded_documents.get(bid_id, [])
+
+
+@app.post("/api/bidder/bids/{bid_id}/documents")
+async def upload_bidder_documents(bid_id: str, files: list[UploadFile] = File(...)):
+    """Store document metadata for the demo flow.
+
+    The hackathon app deliberately keeps documents in memory, but the endpoint
+    follows a normal multipart upload contract and can be swapped for object
+    storage without changing the frontend.
+    """
+    if bid_id not in BIDS:
+        raise HTTPException(404, "bid not found")
+    if not files:
+        raise HTTPException(422, "select at least one document")
+
+    documents = _uploaded_documents.setdefault(bid_id, [])
+    uploaded = []
+    for file in files:
+        content = await file.read()
+        if not file.filename:
+            raise HTTPException(422, "each document needs a file name")
+        if len(content) > 10 * 1024 * 1024:
+            raise HTTPException(413, f"{file.filename} exceeds the 10 MB limit")
+        document = {
+            "id": str(uuid.uuid4()),
+            "filename": file.filename,
+            "content_type": file.content_type or "application/octet-stream",
+            "size_bytes": len(content),
+            "uploaded_at": datetime.now(timezone.utc).isoformat(),
+        }
+        documents.append(document)
+        uploaded.append(document)
+
+    # In the demo, document extraction is represented by a deterministic
+    # confirmation that the selected bid now has supporting experience
+    # evidence.  Keep this scoped to the current bid; uploads for one tender
+    # must never alter another bid application's readiness.
+    experience_fact = next((fact for fact in BIDS[bid_id]["facts"] if fact["field"] == "experience_cert_present"), None)
+    if experience_fact:
+        experience_fact.update(
+            {
+                "value": True,
+                "confidence": 0.9,
+                "evidence_ref": uploaded[-1]["id"],
+                "evidence_span": f"Supporting document uploaded: {uploaded[-1]['filename']}",
+            }
+        )
+
+    _audit("BIDDER_DOCUMENTS_UPLOADED", bid_id, {"document_ids": [d["id"] for d in uploaded]})
+    return uploaded
+
+
+@app.post("/api/bidder/bids/{bid_id}/submit")
+async def submit_bid(bid_id: str):
+    if bid_id not in BIDS:
+        raise HTTPException(404, "bid not found")
+    if BIDS[bid_id]["status"].upper() == "SUBMITTED":
+        previous_submission = next(
+            (event["payload"] for event in reversed(_audit_log)
+             if event["entity_id"] == bid_id and event["event_type"] == "BID_SUBMITTED"),
+            None,
+        )
+        return previous_submission or {
+            "bid_id": bid_id,
+            "status": "SUBMITTED",
+            "submitted_at": None,
+            "document_count": len(_uploaded_documents.get(bid_id, [])),
+        }
+
+    result = await readiness(bid_id)
+    if any(item["status"] == "MISSING" for item in result["items"]):
+        raise HTTPException(422, "resolve all mandatory readiness items before submitting")
+
+    BIDS[bid_id]["status"] = "SUBMITTED"
+    submission = {
+        "bid_id": bid_id,
+        "status": "SUBMITTED",
+        "submitted_at": datetime.now(timezone.utc).isoformat(),
+        "document_count": len(_uploaded_documents.get(bid_id, [])),
+    }
+    _audit("BID_SUBMITTED", bid_id, submission)
+    return submission
+
+
+@app.get("/api/bidder/bids/{bid_id}/status")
+def bidder_bid_status(bid_id: str):
+    """Shared bidder-facing view of the same status and officer decision
+    used by the procurement dashboard."""
+    if bid_id not in BIDS:
+        raise HTTPException(404, "bid not found")
+    return {
+        "bid_id": bid_id,
+        "status": BIDS[bid_id]["status"].upper(),
+        "tender": _tender_for_bid(BIDS[bid_id]),
+        "decision": _decisions.get(bid_id),
+    }
 
 
 @app.get("/api/health")

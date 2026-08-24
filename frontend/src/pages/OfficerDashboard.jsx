@@ -20,6 +20,8 @@ export default function OfficerDashboard() {
 
   useEffect(() => {
     load();
+    const refreshTimer = window.setInterval(load, 4000);
+    return () => window.clearInterval(refreshTimer);
   }, []);
 
   async function evaluateAll() {
@@ -74,6 +76,7 @@ export default function OfficerDashboard() {
             <thead>
               <tr className="text-left text-xs text-slate uppercase tracking-wide border-b border-line">
                 <th className="px-5 py-3 font-medium">Bidder</th>
+                <th className="px-5 py-3 font-medium">Tender</th>
                 <th className="px-5 py-3 font-medium">Compliance</th>
                 <th className="px-5 py-3 font-medium">Risk</th>
                 <th className="px-5 py-3 font-medium">Decision</th>
@@ -88,6 +91,7 @@ export default function OfficerDashboard() {
                   onClick={() => navigate(`/officer/bids/${b.bid_id}`)}
                 >
                   <td className="px-5 py-3.5 font-medium text-ink">{b.bidder_org_name}</td>
+                  <td className="px-5 py-3.5 text-xs text-slate">{b.tender?.title || "—"}</td>
                   <td className="px-5 py-3.5"><StatusBadge status={b.compliance_status} /></td>
                   <td className="px-5 py-3.5">{b.risk_level ? <StatusBadge status={b.risk_level} /> : <span className="text-slate text-xs">Not run</span>}</td>
                   <td className="px-5 py-3.5"><StatusBadge status={b.decision} /></td>

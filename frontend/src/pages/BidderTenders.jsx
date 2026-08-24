@@ -6,10 +6,21 @@ import { api } from "../lib/api.js";
 export default function BidderTenders() {
   const [tenders, setTenders] = useState(null);
   const navigate = useNavigate();
+  const [busyTenderId, setBusyTenderId] = useState(null);
 
   useEffect(() => {
     api.bidderTenders().then(setTenders);
   }, []);
+
+  async function openBidWorkspace(tenderId) {
+    setBusyTenderId(tenderId);
+    try {
+      const bid = await api.bidderCreateBid(tenderId);
+      navigate(`/bidder/readiness?bidId=${encodeURIComponent(bid.id)}`);
+    } finally {
+      setBusyTenderId(null);
+    }
+  }
 
   return (
     <Shell>
@@ -24,10 +35,11 @@ export default function BidderTenders() {
               <div className="text-xs text-slate mt-1">{t.organization} · v{t.version}</div>
             </div>
             <button
-              onClick={() => navigate("/bidder/readiness")}
-              className="text-xs font-medium text-white bg-accent hover:bg-accent2 px-3.5 py-2 rounded-lg transition-colors"
+              onClick={() => openBidWorkspace(t.id)}
+              disabled={busyTenderId === t.id}
+              className="text-xs font-medium text-white bg-accent hover:bg-accent2 px-3.5 py-2 rounded-lg transition-colors disabled:opacity-60"
             >
-              Check readiness
+              {busyTenderId === t.id ? "Opening…" : "Prepare bid"}
             </button>
           </div>
         ))}
