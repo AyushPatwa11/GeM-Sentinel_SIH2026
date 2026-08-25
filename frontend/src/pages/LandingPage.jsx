@@ -21,12 +21,16 @@ import {
   Check,
   FileCheck2,
   Sparkles,
+  Menu,
+  X,
 } from "lucide-react";
 
 export default function LandingPage() {
   const navigate = useNavigate();
   const [activeTickerIndex, setActiveTickerIndex] = useState(0);
   const [isTickerPaused, setIsTickerPaused] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
 
   const newsItems = [
     {
@@ -61,6 +65,15 @@ export default function LandingPage() {
     },
   ];
 
+  // Scroll state for navbar glassmorphism
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 20);
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
   // Auto rotate news strip when not paused
   useEffect(() => {
     if (isTickerPaused) return;
@@ -73,49 +86,151 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-canvas text-ink font-body selection:bg-accent/20">
       {/* ─────────────────────────────────────────────────────────────
-          NAVBAR
+          NAVBAR (CLEAN, UNCLUTTERED, PROFESSIONAL & ANIMATED)
       ───────────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 bg-ink/95 backdrop-blur-md border-b border-white/10 text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-accent flex items-center justify-center shadow-md shadow-accent/30">
+      <header
+        className={`sticky top-0 z-50 transition-all duration-300 ${
+          scrolled
+            ? "bg-ink/95 backdrop-blur-md border-b border-white/10 shadow-lg shadow-black/10"
+            : "bg-ink border-b border-white/10"
+        }`}
+      >
+        <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-10 h-20 flex items-center justify-between gap-6">
+          {/* Logo / Brand Name */}
+          <Link
+            to="/"
+            className="flex items-center gap-3 shrink-0 group transition-transform duration-200 hover:scale-[1.02]"
+          >
+            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shadow-md shadow-accent/30 group-hover:shadow-accent/50 transition-all">
               <ShieldCheck className="w-5 h-5 text-white" />
             </div>
-            <div className="flex items-center gap-2.5">
-              <span className="font-display font-bold text-lg tracking-tight">GeM Sentinel</span>
-              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded-md bg-white/10 text-white/80 border border-white/15">
-                <span className="w-1.5 h-1.5 rounded-full bg-pass animate-pulse" />
-                Compliance Engine
-              </span>
-            </div>
-          </div>
+            <span className="font-display font-bold text-xl text-white tracking-tight whitespace-nowrap">
+              GeM Sentinel
+            </span>
+          </Link>
 
-          <nav className="hidden lg:flex items-center gap-8 text-sm font-medium text-white/70">
-            <a href="#problem" className="hover:text-white transition-colors">The Problem</a>
-            <a href="#evidence" className="hover:text-white transition-colors">Precedents</a>
-            <a href="#solution" className="hover:text-white transition-colors">Architecture</a>
-            <a href="#features" className="hover:text-white transition-colors">Capabilities</a>
-            <a href="#workflow" className="hover:text-white transition-colors">Workflow</a>
-            <a href="#roadmap" className="hover:text-white transition-colors">Roadmap</a>
-            <a href="#impact" className="hover:text-white transition-colors">Impact</a>
+          {/* Desktop Navigation Links */}
+          <nav className="hidden lg:flex items-center gap-7 xl:gap-9 text-sm font-medium text-white/70">
+            {[
+              { href: "#problem", label: "Problem" },
+              { href: "#evidence", label: "Precedents" },
+              { href: "#solution", label: "Architecture" },
+              { href: "#features", label: "Features" },
+              { href: "#workflow", label: "Workflow" },
+              { href: "#roadmap", label: "Roadmap" },
+              { href: "#impact", label: "Impact" },
+            ].map((link) => (
+              <a
+                key={link.href}
+                href={link.href}
+                className="relative py-1 text-white/75 hover:text-white transition-colors duration-200 group text-[13px] xl:text-sm font-medium whitespace-nowrap"
+              >
+                <span>{link.label}</span>
+                <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-accent rounded-full transition-all duration-300 group-hover:w-full" />
+              </a>
+            ))}
           </nav>
 
-          <div className="flex items-center gap-3">
+          {/* Action CTAs */}
+          <div className="hidden sm:flex items-center gap-3.5 shrink-0">
             <Link
               to="/login"
-              className="text-sm font-medium text-white/80 hover:text-white px-3.5 py-1.5 rounded-lg transition-colors hidden sm:block"
+              className="text-sm font-medium text-white/80 hover:text-white px-4 py-2 rounded-xl transition-colors whitespace-nowrap"
             >
               Sign In
             </Link>
             <Link
               to="/login"
-              className="bg-accent hover:bg-accent2 text-white text-sm font-semibold px-4 py-2 rounded-xl shadow-sm shadow-accent/30 transition-all hover:scale-[1.02] flex items-center gap-1.5"
+              className="bg-accent hover:bg-accent2 text-white text-sm font-semibold px-5 py-2.5 rounded-xl shadow-md shadow-accent/30 transition-all duration-200 hover:scale-[1.02] hover:shadow-accent/50 flex items-center gap-2 whitespace-nowrap cursor-pointer"
             >
               <span>Get Started</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
+
+          {/* Mobile Menu Button */}
+          <div className="flex lg:hidden items-center gap-2">
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="p-2 rounded-lg bg-white/10 text-white hover:bg-white/15 transition-colors cursor-pointer"
+              aria-label="Toggle Navigation Menu"
+            >
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+          </div>
         </div>
+
+        {/* Mobile Dropdown Menu */}
+        {mobileMenuOpen && (
+          <div className="lg:hidden bg-ink2 border-b border-white/10 px-6 py-6 space-y-4 animate-fadeIn">
+            <nav className="flex flex-col space-y-3 text-sm font-medium text-white/80">
+              <a
+                href="#problem"
+                onClick={() => setMobileMenuOpen(false)}
+                className="py-1.5 hover:text-accent transition-colors"
+              >
+                The Problem
+              </a>
+              <a
+                href="#evidence"
+                onClick={() => setMobileMenuOpen(false)}
+                className="py-1.5 hover:text-accent transition-colors"
+              >
+                Precedents & Sourcing
+              </a>
+              <a
+                href="#solution"
+                onClick={() => setMobileMenuOpen(false)}
+                className="py-1.5 hover:text-accent transition-colors"
+              >
+                Architecture
+              </a>
+              <a
+                href="#features"
+                onClick={() => setMobileMenuOpen(false)}
+                className="py-1.5 hover:text-accent transition-colors"
+              >
+                Features & Capabilities
+              </a>
+              <a
+                href="#workflow"
+                onClick={() => setMobileMenuOpen(false)}
+                className="py-1.5 hover:text-accent transition-colors"
+              >
+                Workflow
+              </a>
+              <a
+                href="#roadmap"
+                onClick={() => setMobileMenuOpen(false)}
+                className="py-1.5 hover:text-accent transition-colors"
+              >
+                Tech & Roadmap
+              </a>
+              <a
+                href="#impact"
+                onClick={() => setMobileMenuOpen(false)}
+                className="py-1.5 hover:text-accent transition-colors"
+              >
+                Market Impact
+              </a>
+            </nav>
+
+            <div className="pt-4 border-t border-white/10 flex flex-col gap-2.5">
+              <Link
+                to="/login"
+                className="w-full text-center text-sm font-medium text-white/80 bg-white/5 py-2.5 rounded-xl border border-white/10"
+              >
+                Sign In
+              </Link>
+              <Link
+                to="/login"
+                className="w-full text-center text-sm font-semibold text-white bg-accent py-2.5 rounded-xl shadow-md shadow-accent/30"
+              >
+                Get Started
+              </Link>
+            </div>
+          </div>
+        )}
       </header>
 
       {/* ─────────────────────────────────────────────────────────────
@@ -132,11 +247,11 @@ export default function LandingPage() {
         />
 
         {/* Ambient Gradient Glows */}
-        <div className="absolute top-1/4 left-1/3 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px] bg-accent/20 rounded-full blur-[140px] pointer-events-none" />
-        <div className="absolute bottom-10 right-10 w-[400px] h-[300px] bg-pass/10 rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute top-1/4 left-1/3 -translate-x-1/2 -translate-y-1/2 w-[650px] h-[380px] bg-accent/20 rounded-full blur-[140px] pointer-events-none" />
+        <div className="absolute bottom-10 right-10 w-[450px] h-[320px] bg-pass/10 rounded-full blur-[130px] pointer-events-none" />
 
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid lg:grid-cols-12 gap-12 lg:gap-8 items-center">
+        <div className="relative max-w-7xl mx-auto px-6 sm:px-8 lg:px-10">
+          <div className="grid lg:grid-cols-12 gap-12 lg:gap-10 items-center">
             <div className="lg:col-span-7 space-y-6">
               <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 border border-white/15 text-xs font-medium text-white/90 backdrop-blur-sm shadow-xs">
                 <Sparkles className="w-3.5 h-3.5 text-blue-300" />
@@ -154,7 +269,7 @@ export default function LandingPage() {
               <div className="pt-2 flex flex-wrap items-center gap-4">
                 <button
                   onClick={() => navigate("/login")}
-                  className="bg-accent hover:bg-accent2 text-white font-semibold px-6 py-3.5 rounded-xl shadow-lg shadow-accent/30 transition-all hover:scale-[1.02] flex items-center gap-2 text-sm sm:text-base cursor-pointer"
+                  className="bg-accent hover:bg-accent2 text-white font-semibold px-7 py-3.5 rounded-xl shadow-lg shadow-accent/30 transition-all duration-200 hover:scale-[1.02] flex items-center gap-2.5 text-sm sm:text-base cursor-pointer"
                 >
                   <span>Get Started</span>
                   <ArrowRight className="w-4 h-4" />
@@ -162,7 +277,7 @@ export default function LandingPage() {
 
                 <a
                   href="#workflow"
-                  className="bg-white/10 hover:bg-white/15 text-white border border-white/20 font-medium px-5 py-3.5 rounded-xl transition-all flex items-center gap-2 text-sm sm:text-base"
+                  className="bg-white/10 hover:bg-white/15 text-white border border-white/20 font-medium px-5 py-3.5 rounded-xl transition-all duration-200 flex items-center gap-2 text-sm sm:text-base cursor-pointer"
                 >
                   <span>See How It Works</span>
                   <ChevronDown className="w-4 h-4" />
@@ -170,8 +285,8 @@ export default function LandingPage() {
               </div>
 
               {/* Quick Pillars under Hero */}
-              <div className="pt-8 border-t border-white/10 grid grid-cols-1 sm:grid-cols-3 gap-5 text-xs text-white/70">
-                <div className="bg-white/5 p-3.5 rounded-xl border border-white/10">
+              <div className="pt-8 border-t border-white/10 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs text-white/70">
+                <div className="bg-white/5 p-4 rounded-xl border border-white/10 transition-all hover:bg-white/10">
                   <div className="text-white font-semibold text-sm mb-1 flex items-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4 text-pass shrink-0" />
                     <span>Deterministic Rules</span>
@@ -181,7 +296,7 @@ export default function LandingPage() {
                   </p>
                 </div>
 
-                <div className="bg-white/5 p-3.5 rounded-xl border border-white/10">
+                <div className="bg-white/5 p-4 rounded-xl border border-white/10 transition-all hover:bg-white/10">
                   <div className="text-white font-semibold text-sm mb-1 flex items-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4 text-pass shrink-0" />
                     <span>Evidence-Linked</span>
@@ -191,7 +306,7 @@ export default function LandingPage() {
                   </p>
                 </div>
 
-                <div className="bg-white/5 p-3.5 rounded-xl border border-white/10">
+                <div className="bg-white/5 p-4 rounded-xl border border-white/10 transition-all hover:bg-white/10">
                   <div className="text-white font-semibold text-sm mb-1 flex items-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4 text-pass shrink-0" />
                     <span>Tamper-Evident</span>
@@ -205,7 +320,7 @@ export default function LandingPage() {
 
             {/* Interactive Hero Visual Showcase */}
             <div className="lg:col-span-5">
-              <div className="bg-ink2/95 border border-white/15 rounded-2xl p-6 shadow-2xl backdrop-blur-xl relative overflow-hidden transition-all hover:border-white/25">
+              <div className="bg-ink2/95 border border-white/15 rounded-2xl p-6 shadow-2xl backdrop-blur-xl relative overflow-hidden transition-all duration-300 hover:border-white/30 hover:shadow-accent/10">
                 <div className="flex items-center justify-between border-b border-white/10 pb-4 mb-5">
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-red-400/80 inline-block" />
@@ -286,10 +401,10 @@ export default function LandingPage() {
       </section>
 
       {/* ─────────────────────────────────────────────────────────────
-          SECTION 2: THE PROBLEM (REAL, SOURCED, NOT INVENTED)
+          SECTION 2: THE PROBLEM
       ───────────────────────────────────────────────────────────── */}
       <section id="problem" className="py-20 bg-white border-b border-line">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-10">
           <div className="max-w-3xl mb-14">
             <span className="text-xs font-semibold uppercase tracking-wider text-accent bg-accent/10 px-3 py-1 rounded-full border border-accent/20">
               The Reality of Public Procurement
@@ -364,7 +479,7 @@ export default function LandingPage() {
           SECTION 3: NEWS TICKER / VERIFIED REFERENCE STRIP
       ───────────────────────────────────────────────────────────── */}
       <section id="evidence" className="py-16 bg-canvas border-b border-line">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-10">
           <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
             <div>
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-fail mb-1.5">
@@ -376,7 +491,7 @@ export default function LandingPage() {
               </h2>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-xs text-slate hidden sm:inline">Click cards to view government records</span>
+              <span className="text-xs text-slate hidden sm:inline">Click cards to view official records</span>
               <div className="flex gap-1.5">
                 {newsItems.map((_, i) => (
                   <button
@@ -448,7 +563,7 @@ export default function LandingPage() {
           SECTION 4: THE SOLUTION
       ───────────────────────────────────────────────────────────── */}
       <section id="solution" className="py-20 bg-white border-b border-line">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-10">
           <div className="text-center max-w-3xl mx-auto mb-16">
             <span className="text-xs font-semibold uppercase tracking-wider text-pass bg-passBg/80 px-3 py-1 rounded-full border border-pass/30">
               The Architectural Answer
@@ -514,10 +629,10 @@ export default function LandingPage() {
       </section>
 
       {/* ─────────────────────────────────────────────────────────────
-          SECTION 5: FEATURES GRID (WHAT IS ACTUALLY BUILT)
+          SECTION 5: FEATURES GRID
       ───────────────────────────────────────────────────────────── */}
       <section id="features" className="py-20 bg-canvas border-b border-line">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-10">
           <div className="max-w-3xl mb-14">
             <span className="text-xs font-semibold uppercase tracking-wider text-accent bg-accent/10 px-3 py-1 rounded-full border border-accent/20">
               Core Capabilities
@@ -531,7 +646,6 @@ export default function LandingPage() {
           </div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {/* Feature 1 */}
             <div className="bg-card p-6 rounded-card border border-line hover:shadow-md hover:border-accent/40 transition-all">
               <div className="w-10 h-10 rounded-xl bg-accent/10 text-accent flex items-center justify-center mb-4">
                 <Cpu className="w-5 h-5" />
@@ -544,7 +658,6 @@ export default function LandingPage() {
               </p>
             </div>
 
-            {/* Feature 2 */}
             <div className="bg-card p-6 rounded-card border border-line hover:shadow-md hover:border-pass/40 transition-all">
               <div className="w-10 h-10 rounded-xl bg-passBg text-pass flex items-center justify-center mb-4">
                 <FileCheck2 className="w-5 h-5" />
@@ -557,7 +670,6 @@ export default function LandingPage() {
               </p>
             </div>
 
-            {/* Feature 3 */}
             <div className="bg-card p-6 rounded-card border border-line hover:shadow-md hover:border-review/40 transition-all">
               <div className="w-10 h-10 rounded-xl bg-reviewBg text-review flex items-center justify-center mb-4">
                 <Scale className="w-5 h-5" />
@@ -570,7 +682,6 @@ export default function LandingPage() {
               </p>
             </div>
 
-            {/* Feature 4 */}
             <div className="bg-card p-6 rounded-card border border-line hover:shadow-md hover:border-accent/40 transition-all">
               <div className="w-10 h-10 rounded-xl bg-accent/10 text-accent flex items-center justify-center mb-4">
                 <Layers className="w-5 h-5" />
@@ -583,7 +694,6 @@ export default function LandingPage() {
               </p>
             </div>
 
-            {/* Feature 5 */}
             <div className="bg-card p-6 rounded-card border border-line hover:shadow-md hover:border-fail/40 transition-all">
               <div className="w-10 h-10 rounded-xl bg-failBg text-fail flex items-center justify-center mb-4">
                 <ShieldCheck className="w-5 h-5" />
@@ -596,7 +706,6 @@ export default function LandingPage() {
               </p>
             </div>
 
-            {/* Feature 6 */}
             <div className="bg-card p-6 rounded-card border border-line hover:shadow-md hover:border-ink/40 transition-all">
               <div className="w-10 h-10 rounded-xl bg-ink text-white flex items-center justify-center mb-4">
                 <Users className="w-5 h-5" />
@@ -609,7 +718,6 @@ export default function LandingPage() {
               </p>
             </div>
 
-            {/* Feature 7 */}
             <div className="bg-card p-6 rounded-card border border-line hover:shadow-md hover:border-pass/40 transition-all">
               <div className="w-10 h-10 rounded-xl bg-passBg text-pass flex items-center justify-center mb-4">
                 <Lock className="w-5 h-5" />
@@ -622,7 +730,6 @@ export default function LandingPage() {
               </p>
             </div>
 
-            {/* Feature 8 */}
             <div className="bg-card p-6 rounded-card border border-line hover:shadow-md hover:border-accent/40 transition-all">
               <div className="w-10 h-10 rounded-xl bg-accent/10 text-accent flex items-center justify-center mb-4">
                 <Zap className="w-5 h-5" />
@@ -642,7 +749,7 @@ export default function LandingPage() {
           SECTION 6: WORKFLOW VISUAL
       ───────────────────────────────────────────────────────────── */}
       <section id="workflow" className="py-20 bg-white border-b border-line">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-10">
           <div className="text-center max-w-3xl mx-auto mb-14">
             <span className="text-xs font-semibold uppercase tracking-wider text-accent bg-accent/10 px-3 py-1 rounded-full border border-accent/20">
               End-to-End Execution Flow
@@ -716,7 +823,7 @@ export default function LandingPage() {
           SECTION 7: TECHNOLOGY & ROADMAP
       ───────────────────────────────────────────────────────────── */}
       <section id="roadmap" className="py-20 bg-canvas border-b border-line">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-10">
           <div className="max-w-3xl mb-14">
             <span className="text-xs font-semibold uppercase tracking-wider text-accent bg-accent/10 px-3 py-1 rounded-full border border-accent/20">
               Technical Architecture & Evolution
@@ -837,7 +944,7 @@ export default function LandingPage() {
           SECTION 8: MARKET VALUE & IMPACT
       ───────────────────────────────────────────────────────────── */}
       <section id="impact" className="py-20 bg-white border-b border-line">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-10">
           <div className="max-w-3xl mb-14">
             <span className="text-xs font-semibold uppercase tracking-wider text-pass bg-passBg px-3 py-1 rounded-full border border-pass/20">
               Measurable Economic Impact
@@ -907,7 +1014,7 @@ export default function LandingPage() {
           }}
         />
 
-        <div className="relative max-w-4xl mx-auto px-4 text-center">
+        <div className="relative max-w-4xl mx-auto px-6 text-center">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 border border-white/15 text-xs text-white/80 mb-6">
             <Sparkles className="w-3.5 h-3.5 text-blue-300" />
             <span>Ready for live evaluation</span>
@@ -935,7 +1042,7 @@ export default function LandingPage() {
 
       {/* Footer */}
       <footer className="bg-ink2 text-white/60 py-10 border-t border-white/10 text-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-6">
+        <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-10 flex flex-col sm:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
               <ShieldCheck className="w-4 h-4 text-white" />
