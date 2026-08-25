@@ -2,6 +2,7 @@ import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/auth.jsx";
 import Login from "./pages/Login.jsx";
+import LandingPage from "./pages/LandingPage.jsx";
 import OfficerDashboard from "./pages/OfficerDashboard.jsx";
 import BidDetail from "./pages/BidDetail.jsx";
 import AuditTrail from "./pages/AuditTrail.jsx";
@@ -20,6 +21,8 @@ function RequireRole({ role, children }) {
 function AppRoutes() {
   return (
     <Routes>
+      {/* Public Landing Page */}
+      <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<Login />} />
 
       {/* Officer Portal */}
@@ -35,7 +38,7 @@ function AppRoutes() {
       <Route path="/bidder/readiness" element={<RequireRole role="bidder"><BidderSubmissionFlow /></RequireRole>} />
       <Route path="/bidder/status/:bidId" element={<RequireRole role="bidder"><BidderStatusTracker /></RequireRole>} />
 
-      <Route path="*" element={<Navigate to="/login" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
