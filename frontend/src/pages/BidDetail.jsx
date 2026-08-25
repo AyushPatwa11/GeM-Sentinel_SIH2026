@@ -3,6 +3,25 @@ import { useParams, useNavigate } from "react-router-dom";
 import Shell from "../components/Shell.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 import { api } from "../lib/api.js";
+import {
+  ArrowLeft,
+  ShieldCheck,
+  ShieldAlert,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
+  FileCheck,
+  Search,
+  MessageSquare,
+  Lock,
+  ExternalLink,
+  Info,
+  HelpCircle,
+} from "lucide-react";
 
 const ADAPTER_SOURCES = [
   { key: "GSTN", label: "GSTN Registry Lookup", desc: "Cross-check legal entity name and return filing status" },
@@ -13,6 +32,53 @@ const ADAPTER_SOURCES = [
   { key: "NSIC", label: "NSIC Registration", desc: "Verify single-point registration for government purchases" },
 ];
 
+/* Minimal SVG Radial Gauge Component */
+function RiskGauge({ score = 0, level = "LOW" }) {
+  const radius = 38;
+  const stroke = 8;
+  const normalizedRadius = radius - stroke * 2;
+  const circumference = normalizedRadius * 2 * Math.PI;
+  const strokeDashoffset = circumference - (Math.min(100, Math.max(0, score)) / 100) * circumference;
+
+  const color = level === "HIGH" ? "#C23B3B" : level === "MEDIUM" ? "#B7791F" : "#1B8A5A";
+  const bgTrack = level === "HIGH" ? "#FBEAEA" : level === "MEDIUM" ? "#FDF3E1" : "#E8F6EF";
+
+  return (
+    <div className="flex items-center gap-4">
+      <div className="relative flex items-center justify-center shrink-0">
+        <svg height={radius * 2} width={radius * 2} className="rotate-[-90deg]">
+          <circle
+            stroke={bgTrack}
+            fill="transparent"
+            strokeWidth={stroke}
+            r={normalizedRadius}
+            cx={radius}
+            cy={radius}
+          />
+          <circle
+            stroke={color}
+            fill="transparent"
+            strokeWidth={stroke}
+            strokeDasharray={`${circumference} ${circumference}`}
+            style={{ strokeDashoffset, transition: "stroke-dashoffset 0.6s ease" }}
+            strokeLinecap="round"
+            r={normalizedRadius}
+            cx={radius}
+            cy={radius}
+          />
+        </svg>
+        <div className="absolute flex flex-col items-center">
+          <span className="font-mono text-base font-bold text-ink leading-none">{score}</span>
+        </div>
+      </div>
+      <div>
+        <div className="text-[10px] font-mono uppercase tracking-wider text-slate font-semibold">Risk Score</div>
+        <div className="font-display font-bold text-sm text-ink">{level} RISK</div>
+      </div>
+    </div>
+  );
+}
+
 export default function BidDetail() {
   const { bidId } = useParams();
   const navigate = useNavigate();
@@ -21,21 +87,17 @@ export default function BidDetail() {
   const [decisionBusy, setDecisionBusy] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
   const [pendingDecision, setPendingDecision] = useState(null);
+  const [expandedReasoning, setExpandedReasoning] = useState({});
 
   // Additional Verification Action State
   const [selectedAdapter, setSelectedAdapter] = useState("GSTN");
   const [runningVerification, setRunningVerification] = useState(false);
   const [verificationFeedback, setVerificationFeedback] = useState(null);
 
-  // Notes & Flags State
+  // Notes State
   const [newNote, setNewNote] = useState("");
   const [noteCategory, setNoteCategory] = useState("GENERAL");
   const [savingNote, setSavingNote] = useState(false);
-
-  const [flagDocId, setFlagDocId] = useState("");
-  const [flagReason, setFlagReason] = useState("");
-  const [flagAction, setFlagAction] = useState("Provide updated clearance certificate");
-  const [savingFlag, setSavingFlag] = useState(false);
 
   async function load() {
     try {
@@ -51,6 +113,10 @@ export default function BidDetail() {
     const interval = setInterval(load, 4000);
     return () => clearInterval(interval);
   }, [bidId]);
+
+  function toggleReasoning(clauseId) {
+    setExpandedReasoning((prev) => ({ ...prev, [clauseId]: !prev[clauseId] }));
+  }
 
   async function handleTriggerVerification() {
     setRunningVerification(true);
@@ -81,21 +147,6 @@ export default function BidDetail() {
     }
   }
 
-  async function handleFlagDocument(e) {
-    e.preventDefault();
-    if (!flagDocId || !flagReason.trim()) return;
-    setSavingFlag(true);
-    try {
-      await api.officerFlagDocument(bidId, flagDocId, flagReason, flagAction);
-      setFlagReason("");
-      await load();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSavingFlag(false);
-    }
-  }
-
   async function submitDecision(decision) {
     const diverges = decision !== bid.ai_recommendation;
     if (diverges && !overrideReason.trim() && pendingDecision !== decision) {
@@ -115,129 +166,210 @@ export default function BidDetail() {
     }
   }
 
-  if (error) return <Shell><div className="text-fail text-sm p-4 bg-failBg rounded-lg">{error}</div></Shell>;
-  if (!bid) return <Shell><div className="text-sm text-slate py-12 text-center">Loading bid evaluation…</div></Shell>;
+  if (error) {
+    return (
+      <Shell>
+        <div className="text-fail text-sm p-4 bg-failBg rounded-xl border border-fail/20 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4" />
+          <span>{error}</span>
+        </div>
+      </Shell>
+    );
+  }
+
+  if (!bid) {
+    return (
+      <Shell>
+        <div className="text-sm text-slate py-20 text-center">
+          <div className="inline-block animate-spin mb-2">⚡</div>
+          <div>Loading bid verification records…</div>
+        </div>
+      </Shell>
+    );
+  }
 
   return (
     <Shell>
+      {/* Back button */}
       <button
         onClick={() => navigate("/officer")}
-        className="text-xs text-slate hover:text-ink mb-4 inline-flex items-center gap-1 font-medium"
+        className="text-xs text-slate hover:text-ink mb-5 inline-flex items-center gap-1.5 font-semibold transition-colors cursor-pointer"
       >
-        ← Back to Officer Queue
+        <ArrowLeft className="w-3.5 h-3.5" />
+        <span>Back to Officer Queue</span>
       </button>
 
       {/* Header Banner */}
-      <div className="bg-card border border-line rounded-card p-6 mb-6 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="bg-card border border-line rounded-card p-6 mb-8 shadow-xs">
+        <div className="flex flex-wrap items-center justify-between gap-6">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-semibold uppercase tracking-wider text-accent bg-accent/10 px-2.5 py-0.5 rounded-full">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-xs font-semibold uppercase tracking-wider text-accent bg-accent/10 px-2.5 py-0.5 rounded-full border border-accent/20">
                 {bid.tender?.organization || "CPCL"}
               </span>
-              <span className="text-xs font-mono text-slate">Bid: {bidId}</span>
+              <span className="text-xs font-mono text-slate">Bid ID: {bidId}</span>
             </div>
-            <h1 className="font-display text-2xl font-bold text-ink">{bid.bidder_org_name}</h1>
-            <p className="text-xs text-slate mt-1">
-              Tender: <span className="text-ink font-medium">{bid.tender?.title}</span> (v{bid.tender?.version})
+            <h1 className="font-display text-2xl sm:text-3xl font-bold text-ink tracking-tight">
+              {bid.bidder_org_name}
+            </h1>
+            <p className="text-xs sm:text-sm text-slate mt-1">
+              Target Tender: <span className="text-ink font-semibold">{bid.tender?.title}</span> (v{bid.tender?.version})
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="text-right">
-              <div className="text-[11px] text-slate font-medium">Compliance Gating</div>
-              <div className="mt-0.5"><StatusBadge status={bid.compliance_status} /></div>
+          <div className="flex flex-wrap items-center gap-6 pt-2 sm:pt-0">
+            {/* Radial Risk Gauge */}
+            <RiskGauge
+              score={bid.risk_assessment.total_score}
+              level={bid.risk_assessment.risk_level}
+            />
+
+            <div className="h-10 w-[1px] bg-line hidden sm:block" />
+
+            <div className="space-y-1 text-right">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-slate font-semibold">Compliance</div>
+              <div><StatusBadge status={bid.compliance_status} /></div>
             </div>
-            <div className="text-right">
-              <div className="text-[11px] text-slate font-medium">AI Risk Level</div>
-              <div className="mt-0.5"><StatusBadge status={bid.risk_assessment.risk_level} /></div>
-            </div>
-            <div className="text-right">
-              <div className="text-[11px] text-slate font-medium">Current Decision</div>
-              <div className="mt-0.5"><StatusBadge status={bid.decision?.final_decision || "PENDING"} /></div>
+
+            <div className="space-y-1 text-right">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-slate font-semibold">Decision</div>
+              <div><StatusBadge status={bid.decision?.final_decision || "PENDING"} /></div>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Cols: Clause-by-clause Compliance & Risk Signals */}
-        <div className="lg:col-span-2 space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Left Column: Clause-by-Clause Evaluation & Extensible Verifications */}
+        <div className="lg:col-span-8 space-y-6">
           {/* AI Recommendation Banner */}
-          <div className="bg-card border border-accent/30 rounded-card p-4 shadow-xs bg-gradient-to-r from-accent/5 to-transparent">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-xs font-bold text-accent uppercase tracking-wider">Explainable AI Recommendation</span>
-                <div className="text-lg font-bold text-ink mt-0.5">
-                  Recommended Action: <span className="text-accent">{bid.ai_recommendation}</span>
-                </div>
+          <div className="bg-gradient-to-r from-accent/10 via-card to-card border border-accent/30 rounded-card p-5 shadow-xs">
+            <div className="flex items-center justify-between mb-2">
+              <div className="inline-flex items-center gap-1.5 text-xs font-bold text-accent uppercase tracking-wider">
+                <Sparkles className="w-4 h-4" />
+                <span>Explainable AI Recommendation</span>
               </div>
               <span className="text-xs font-mono text-slate">
-                Risk Score: {bid.risk_assessment.total_score} ({bid.risk_assessment.policy_version})
+                Policy: {bid.risk_assessment.policy_version}
               </span>
             </div>
+
+            <div className="text-xl font-display font-bold text-ink">
+              Recommended Verdict: <span className="text-accent">{bid.ai_recommendation}</span>
+            </div>
+
             <p className="text-xs text-slate mt-2 leading-relaxed">
-              Based on deterministic evaluation of tender logic trees, MSME exemptions, and live cross-source adapter verification. The procurement officer retains final decision authority.
+              Synthesized through deterministic evaluation of tender logic trees, statutory MSME waivers, and live registry checks. The procurement officer retains final statutory authority.
             </p>
           </div>
 
-          {/* Clause Compliance Table */}
-          <div className="bg-card border border-line rounded-card p-5 shadow-xs">
-            <h2 className="text-sm font-bold text-ink mb-1">Deterministic Clause-by-Clause Compliance</h2>
-            <p className="text-xs text-slate mb-4">
-              Evaluated strictly by pure logic engine without LLM intervention. Every result links to document spans.
+          {/* Clause-by-Clause Evaluation Rows */}
+          <div className="bg-card border border-line rounded-card p-6 shadow-xs">
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-base font-bold text-ink">Deterministic Clause Verification</h2>
+              <span className="text-xs font-mono text-slate">
+                {bid.compliance_results.filter((c) => c.status === "PASS").length}/{bid.compliance_results.length} Passing
+              </span>
+            </div>
+            <p className="text-xs text-slate mb-5">
+              Evaluated strictly by logic engine without LLM intervention. Every rule links to document evidence.
             </p>
 
             <div className="space-y-3">
-              {bid.compliance_results.map((c) => (
-                <div key={c.clause_id} className="p-4 border border-line rounded-xl bg-canvas/40">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
-                      <div className="text-xs font-semibold text-ink">{c.clause_text}</div>
-                      <div className="flex items-center gap-2 mt-1 text-[11px] text-slate">
-                        <span className="font-mono">{c.clause_id}</span>
-                        <span>·</span>
-                        <span className={c.mandatory ? "text-fail font-semibold" : "text-slate"}>
-                          {c.mandatory ? "Mandatory Hard-Gate" : "Optional / Conditional"}
-                        </span>
+              {bid.compliance_results.map((c) => {
+                const isPass = c.status === "PASS";
+                const isFail = c.status === "FAIL";
+                const isExpanded = expandedReasoning[c.clause_id];
+
+                const bgTint = isPass
+                  ? "bg-passBg/30 border-pass/30"
+                  : isFail
+                  ? "bg-failBg/30 border-fail/30"
+                  : "bg-reviewBg/30 border-review/30";
+
+                const StatusIcon = isPass ? CheckCircle2 : isFail ? XCircle : AlertTriangle;
+                const statusColor = isPass ? "text-pass" : isFail ? "text-fail" : "text-review";
+
+                return (
+                  <div
+                    key={c.clause_id}
+                    className={`border rounded-xl p-4 transition-all ${bgTint}`}
+                  >
+                    <div className="flex items-start gap-3.5">
+                      <div className={`mt-0.5 shrink-0 ${statusColor}`}>
+                        <StatusIcon className="w-5 h-5" />
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-ink leading-snug">{c.clause_text}</span>
+                            <span
+                              className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${
+                                c.mandatory ? "bg-failBg text-fail border border-fail/20" : "bg-canvas text-slate border border-line"
+                              }`}
+                            >
+                              {c.mandatory ? "Mandatory" : "Optional"}
+                            </span>
+                          </div>
+                          <StatusBadge status={c.status} size="xs" />
+                        </div>
+
+                        <div className="text-[11px] font-mono text-slate mt-1">
+                          Clause Ref: {c.clause_id}
+                        </div>
+
+                        {/* Evidence References */}
+                        {c.evidence_refs && c.evidence_refs.length > 0 && (
+                          <div className="mt-2 text-[11px] text-accent font-mono bg-white/80 border border-line px-2.5 py-1 rounded-md inline-block">
+                            Source Citation: {c.evidence_refs.join(", ")}
+                          </div>
+                        )}
+
+                        {/* Expandable Reasoning */}
+                        {c.reasoning_chain && c.reasoning_chain.length > 0 && (
+                          <div className="mt-2.5">
+                            <button
+                              type="button"
+                              onClick={() => toggleReasoning(c.clause_id)}
+                              className="text-[11px] font-semibold text-slate hover:text-ink inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <span>{isExpanded ? "Hide reasoning" : "View logic reasoning"}</span>
+                              {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                            </button>
+
+                            {isExpanded && (
+                              <div className="mt-2 p-3 bg-white rounded-lg border border-line text-xs text-slate space-y-1 pl-3 border-l-2 border-l-accent">
+                                {c.reasoning_chain.map((r, i) => (
+                                  <div key={i} className="flex items-start gap-1.5">
+                                    <span className="text-accent font-mono">›</span>
+                                    <span>{r}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <StatusBadge status={c.status} />
                   </div>
-
-                  {c.reasoning_chain && c.reasoning_chain.length > 0 && (
-                    <div className="mt-3 pt-2.5 border-t border-line/60">
-                      <div className="text-[11px] font-semibold text-slate mb-1">Logic Engine Reasoning Chain:</div>
-                      <div className="space-y-1 text-xs text-slate pl-2.5 border-l-2 border-accent/40">
-                        {c.reasoning_chain.map((r, i) => (
-                          <div key={i}>{r}</div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {c.evidence_refs && c.evidence_refs.length > 0 && (
-                    <div className="mt-2 text-[11px] text-accent font-mono bg-accent/5 p-1.5 rounded">
-                      Linked Evidence Spans: {c.evidence_refs.join(", ")}
-                    </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
-          {/* Extensible Additional Verification Action Framework */}
-          <div className="bg-card border border-line rounded-card p-5 shadow-xs">
-            <h2 className="text-sm font-bold text-ink mb-1">⚡ On-Demand Extensible Verification Actions</h2>
+          {/* Extensible Additional Verification Actions */}
+          <div className="bg-card border border-line rounded-card p-6 shadow-xs">
+            <h2 className="text-base font-bold text-ink mb-1">On-Demand Registry Verifications</h2>
             <p className="text-xs text-slate mb-4">
-              Execute live on-demand queries against authoritative government registries to confirm claims or investigate flags.
+              Query live government portals to confirm credentials, check blacklists, or inspect filings.
             </p>
 
             <div className="flex flex-wrap items-center gap-3 mb-4">
               <select
                 value={selectedAdapter}
                 onChange={(e) => setSelectedAdapter(e.target.value)}
-                className="bg-canvas border border-line rounded-lg px-3 py-2 text-xs font-semibold text-ink focus:outline-none focus:border-accent"
+                className="bg-canvas border border-line rounded-xl px-3.5 py-2 text-xs font-semibold text-ink focus:outline-none focus:border-accent"
               >
                 {ADAPTER_SOURCES.map((a) => (
                   <option key={a.key} value={a.key}>
@@ -249,21 +381,25 @@ export default function BidDetail() {
               <button
                 onClick={handleTriggerVerification}
                 disabled={runningVerification}
-                className="bg-accent hover:bg-accent2 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-xs transition-colors disabled:opacity-50"
+                className="bg-accent hover:bg-accent2 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-xs transition-all hover:scale-[1.02] disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
               >
-                {runningVerification ? "Querying Registry…" : "Trigger Verification Check →"}
+                <Search className="w-3.5 h-3.5" />
+                <span>{runningVerification ? "Querying Registry…" : "Trigger Check"}</span>
               </button>
             </div>
 
             {verificationFeedback && (
-              <div className="p-3.5 bg-passBg/40 border border-pass/30 rounded-lg text-xs mb-4">
+              <div className="p-4 bg-passBg/40 border border-pass/30 rounded-xl text-xs mb-4">
                 <div className="flex items-center justify-between font-bold">
-                  <span className="text-pass">Source: {verificationFeedback.source}</span>
-                  <StatusBadge status={verificationFeedback.status} />
+                  <span className="text-pass flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Source: {verificationFeedback.source}</span>
+                  </span>
+                  <StatusBadge status={verificationFeedback.status} size="xs" />
                 </div>
-                <div className="text-ink mt-1 font-medium">{verificationFeedback.evidence}</div>
+                <div className="text-ink mt-1.5 font-medium">{verificationFeedback.evidence}</div>
                 {verificationFeedback.data && (
-                  <pre className="mt-2 text-[10px] bg-white p-2 rounded border border-line font-mono text-slate overflow-x-auto">
+                  <pre className="mt-2.5 text-[10px] bg-white p-3 rounded-lg border border-line font-mono text-slate overflow-x-auto">
                     {JSON.stringify(verificationFeedback.data, null, 2)}
                   </pre>
                 )}
@@ -271,14 +407,14 @@ export default function BidDetail() {
             )}
 
             {bid.custom_verifications?.length > 0 && (
-              <div className="space-y-2 mt-3">
-                <div className="text-xs font-semibold text-ink">Recorded Verification Checks:</div>
+              <div className="space-y-2 mt-4 pt-4 border-t border-line">
+                <div className="text-xs font-bold text-ink">Recorded Verification Audit:</div>
                 {bid.custom_verifications.map((v) => (
-                  <div key={v.id} className="p-2.5 bg-canvas border border-line rounded-lg text-xs flex items-center justify-between">
+                  <div key={v.id} className="p-3 bg-canvas border border-line rounded-xl text-xs flex items-center justify-between">
                     <div>
                       <span className="font-bold text-ink">{v.source}</span>: <span className="text-slate">{v.evidence}</span>
                     </div>
-                    <StatusBadge status={v.status} />
+                    <StatusBadge status={v.status} size="xs" />
                   </div>
                 ))}
               </div>
@@ -286,102 +422,124 @@ export default function BidDetail() {
           </div>
         </div>
 
-        {/* Right Col: Risk Signals, Officer Notes, Document Flags & Decision */}
-        <div className="space-y-6">
-          {/* Risk Signal Breakdown Card */}
-          <div className="bg-card border border-line rounded-card p-5 shadow-xs">
-            <h2 className="text-sm font-bold text-ink mb-1">AI Risk Signals Breakdown</h2>
-            <div className="flex items-center justify-between my-3 p-2.5 bg-canvas rounded-lg text-xs">
-              <span className="text-slate">Total Calculated Risk:</span>
-              <div className="flex items-center gap-1.5">
-                <StatusBadge status={bid.risk_assessment.risk_level} />
-                <span className="font-bold font-mono text-ink">{bid.risk_assessment.total_score}</span>
-              </div>
+        {/* Right Column: Risk Signals, Officer Decision, Inspection Notes */}
+        <div className="lg:col-span-4 space-y-6">
+          {/* Risk Signals Panel with Horizontal Visual Bars */}
+          <div className="bg-card border border-line rounded-card p-6 shadow-xs">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-bold text-ink">Risk Signals</h2>
+              <StatusBadge status={bid.risk_assessment.risk_level} size="xs" />
             </div>
 
             {bid.risk_assessment.signals?.length > 0 ? (
-              <div className="space-y-2">
-                {bid.risk_assessment.signals.map((sig, i) => (
-                  <div key={i} className="p-2.5 bg-failBg/20 border border-fail/20 rounded-lg text-xs">
-                    <div className="flex justify-between font-bold text-ink">
-                      <span>{sig.signal_type}</span>
-                      <span className="text-fail font-mono">+{sig.contribution}</span>
+              <div className="space-y-3.5">
+                {bid.risk_assessment.signals.map((sig, i) => {
+                  const contrib = sig.contribution || 10;
+                  const barWidth = Math.min(100, Math.max(15, contrib * 3));
+
+                  return (
+                    <div key={i} className="p-3 bg-failBg/20 border border-fail/20 rounded-xl text-xs space-y-2">
+                      <div className="flex justify-between items-center font-bold text-ink">
+                        <span>{sig.signal_type}</span>
+                        <span className="text-fail font-mono">+{contrib}</span>
+                      </div>
+
+                      {/* Visual Contribution Bar */}
+                      <div className="w-full bg-line/80 h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-fail h-full rounded-full" style={{ width: `${barWidth}%` }} />
+                      </div>
+
+                      <div className="text-[11px] text-slate font-mono flex items-center gap-1">
+                        <Info className="w-3 h-3 text-slate shrink-0" />
+                        <span className="truncate">{sig.evidence_ref}</span>
+                      </div>
                     </div>
-                    <div className="text-[11px] text-slate mt-1 font-mono">{sig.evidence_ref}</div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
-              <div className="text-xs text-pass font-medium p-3 bg-passBg rounded-lg text-center">
-                ✓ No adverse risk signals detected
+              <div className="text-xs text-pass font-semibold p-4 bg-passBg rounded-xl text-center flex items-center justify-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>No adverse risk signals detected</span>
               </div>
             )}
           </div>
 
           {/* Officer Decision Panel (Gating) */}
-          <div className="bg-card border-2 border-accent/40 rounded-card p-5 shadow-sm">
-            <h2 className="text-sm font-bold text-ink mb-1">Procurement Officer Final Decision</h2>
-            <p className="text-xs text-slate mb-4">
-              AI recommendations assist the officer; human officers retain statutory decision authority.
+          <div className="bg-card border-2 border-accent/40 rounded-card p-6 shadow-md relative">
+            <div className="flex items-center gap-2 mb-1">
+              <Lock className="w-4 h-4 text-accent" />
+              <h2 className="text-base font-bold text-ink">Procurement Officer Decision</h2>
+            </div>
+            <p className="text-xs text-slate mb-5">
+              Officer decision is binding and cryptographically logged to the audit ledger.
             </p>
 
             {pendingDecision && pendingDecision !== bid.ai_recommendation && (
-              <div className="mb-4 p-3 bg-reviewBg/40 border border-review/30 rounded-lg text-xs">
-                <span className="font-bold text-review">Mandatory Override Reason Required:</span>
-                <p className="text-slate text-[11px] mt-0.5">
-                  Your decision ({pendingDecision}) diverges from the AI recommendation ({bid.ai_recommendation}). Please document statutory justification for the immutable audit trail.
+              <div className="mb-4 p-3.5 bg-reviewBg/60 border border-review/40 rounded-xl text-xs space-y-2">
+                <div className="font-bold text-review flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>Mandatory Override Justification</span>
+                </div>
+                <p className="text-slate text-[11px] leading-relaxed">
+                  You are selecting <strong>{pendingDecision}</strong> which diverges from AI recommendation <strong>{bid.ai_recommendation}</strong>. Enter statutory justification below:
                 </p>
                 <textarea
                   value={overrideReason}
                   onChange={(e) => setOverrideReason(e.target.value)}
-                  placeholder="State reason for overriding AI recommendation…"
-                  className="w-full mt-2 bg-white border border-line rounded-lg p-2 text-xs text-ink focus:outline-none focus:border-accent"
+                  placeholder="Record justification for immutable audit trail…"
+                  className="w-full bg-white border border-line rounded-lg p-2.5 text-xs text-ink focus:outline-none focus:border-accent"
                   rows={2}
                 />
               </div>
             )}
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 gap-2.5">
               <button
                 onClick={() => submitDecision("VERIFIED")}
                 disabled={decisionBusy}
-                className="bg-pass hover:bg-pass/90 text-white font-semibold text-xs py-2.5 px-2 rounded-lg shadow-xs transition-colors text-center disabled:opacity-50"
+                className="w-full bg-pass hover:bg-pass/90 text-white font-semibold text-xs py-3 px-4 rounded-xl shadow-xs transition-all hover:scale-[1.01] flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
               >
-                Mark Verified
+                <ShieldCheck className="w-4 h-4" />
+                <span>Approve & Mark Verified</span>
               </button>
+
               <button
                 onClick={() => submitDecision("NEEDS_CLARIFICATION")}
                 disabled={decisionBusy}
-                className="bg-review hover:bg-review/90 text-white font-semibold text-xs py-2.5 px-2 rounded-lg shadow-xs transition-colors text-center disabled:opacity-50"
+                className="w-full bg-review hover:bg-review/90 text-white font-semibold text-xs py-3 px-4 rounded-xl shadow-xs transition-all hover:scale-[1.01] flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
               >
-                Request Info
+                <HelpCircle className="w-4 h-4" />
+                <span>Request Clarification</span>
               </button>
+
               <button
                 onClick={() => submitDecision("NON_COMPLIANT")}
                 disabled={decisionBusy}
-                className="bg-fail hover:bg-fail/90 text-white font-semibold text-xs py-2.5 px-2 rounded-lg shadow-xs transition-colors text-center disabled:opacity-50"
+                className="w-full bg-fail hover:bg-fail/90 text-white font-semibold text-xs py-3 px-4 rounded-xl shadow-xs transition-all hover:scale-[1.01] flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
               >
-                Non-Compliant
+                <ShieldAlert className="w-4 h-4" />
+                <span>Reject as Non-Compliant</span>
               </button>
             </div>
           </div>
 
           {/* Add Inspection Notes */}
-          <div className="bg-card border border-line rounded-card p-5 shadow-xs">
-            <h2 className="text-sm font-bold text-ink mb-2">Inspection Notes & Findings</h2>
-            <form onSubmit={handleAddNote} className="space-y-2 mb-3">
+          <div className="bg-card border border-line rounded-card p-6 shadow-xs">
+            <h2 className="text-base font-bold text-ink mb-2">Inspection Notes</h2>
+            <form onSubmit={handleAddNote} className="space-y-3 mb-4">
               <textarea
                 value={newNote}
                 onChange={(e) => setNewNote(e.target.value)}
                 placeholder="Add inspection remark or observation…"
-                className="w-full bg-canvas border border-line rounded-lg p-2.5 text-xs text-ink focus:outline-none focus:border-accent"
+                className="w-full bg-canvas border border-line rounded-xl p-3 text-xs text-ink focus:outline-none focus:border-accent"
                 rows={2}
               />
               <div className="flex justify-between items-center">
                 <select
                   value={noteCategory}
                   onChange={(e) => setNoteCategory(e.target.value)}
-                  className="bg-white border border-line rounded px-2 py-1 text-[11px] text-ink"
+                  className="bg-white border border-line rounded-lg px-2.5 py-1.5 text-xs text-ink"
                 >
                   <option value="GENERAL">General</option>
                   <option value="COMPLIANCE">Compliance</option>
@@ -390,21 +548,21 @@ export default function BidDetail() {
                 <button
                   type="submit"
                   disabled={savingNote || !newNote.trim()}
-                  className="bg-accent text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50"
+                  className="bg-accent hover:bg-accent2 text-white text-xs font-semibold px-4 py-1.5 rounded-lg disabled:opacity-50 cursor-pointer transition-colors"
                 >
                   {savingNote ? "Saving…" : "Add Note"}
                 </button>
               </div>
             </form>
 
-            <div className="space-y-2 max-h-48 overflow-y-auto">
+            <div className="space-y-2 max-h-52 overflow-y-auto">
               {bid.notes?.map((n) => (
-                <div key={n.id} className="p-2 bg-canvas rounded border border-line text-xs">
-                  <div className="flex justify-between text-[10px] text-slate mb-0.5">
-                    <span className="font-semibold text-ink">{n.category}</span>
+                <div key={n.id} className="p-3 bg-canvas rounded-xl border border-line text-xs">
+                  <div className="flex justify-between text-[10px] text-slate mb-1">
+                    <span className="font-bold text-ink uppercase tracking-wider">{n.category}</span>
                     <span>{new Date(n.created_at).toLocaleTimeString()}</span>
                   </div>
-                  <p className="text-ink">{n.note}</p>
+                  <p className="text-ink leading-relaxed">{n.note}</p>
                 </div>
               ))}
             </div>

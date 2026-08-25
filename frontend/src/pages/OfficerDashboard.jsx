@@ -3,6 +3,17 @@ import { useNavigate } from "react-router-dom";
 import Shell from "../components/Shell.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 import { api } from "../lib/api.js";
+import {
+  ShieldAlert,
+  ShieldCheck,
+  Clock,
+  FileStack,
+  RefreshCw,
+  Search,
+  ChevronRight,
+  Filter,
+  Sparkles,
+} from "lucide-react";
 
 export default function OfficerDashboard() {
   const [bids, setBids] = useState(null);
@@ -10,6 +21,7 @@ export default function OfficerDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState("");
   const [lastSync, setLastSync] = useState(new Date());
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const navigate = useNavigate();
 
   async function load() {
@@ -29,10 +41,15 @@ export default function OfficerDashboard() {
   }, []);
 
   async function evaluateAll() {
-    for (const b of bids || []) {
-      await api.officerEvaluate(b.bid_id);
+    setIsRefreshing(true);
+    try {
+      for (const b of bids || []) {
+        await api.officerEvaluate(b.bid_id);
+      }
+      await load();
+    } finally {
+      setIsRefreshing(false);
     }
-    load();
   }
 
   const summary = bids
@@ -61,77 +78,100 @@ export default function OfficerDashboard() {
 
   return (
     <Shell>
-      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+      {/* Top Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
         <div>
-          <div className="inline-flex items-center gap-2 mb-1">
-            <span className="text-xs font-semibold uppercase tracking-wider text-accent bg-accent/10 px-2.5 py-0.5 rounded-full">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="text-xs font-semibold uppercase tracking-wider text-accent bg-accent/10 px-2.5 py-0.5 rounded-full border border-accent/20">
               Procurement Officer Workspace
             </span>
             <span className="text-xs text-slate">MoPNG / CPCL Sentinel</span>
           </div>
-          <h1 className="font-display text-2xl font-bold text-ink">Bid Verification & Evaluation Queue</h1>
-          <p className="text-sm text-slate mt-0.5">
+          <h1 className="font-display text-3xl font-bold text-ink tracking-tight">
+            Bid Verification & Evaluation Queue
+          </h1>
+          <p className="text-sm text-slate mt-1">
             Real-time compliance monitoring, risk assessment, and decision gating for GeM procurement.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="text-xs text-slate flex items-center gap-1.5 bg-card border border-line px-3 py-2 rounded-lg">
+          <div className="text-xs text-slate font-mono flex items-center gap-2 bg-card border border-line px-3.5 py-2 rounded-xl shadow-xs">
             <span className="w-2 h-2 rounded-full bg-pass animate-pulse" />
             <span>Synced: {lastSync.toLocaleTimeString()}</span>
           </div>
+
           <button
             onClick={evaluateAll}
-            className="bg-accent hover:bg-accent2 text-white text-xs font-semibold px-4 py-2.5 rounded-lg shadow-sm transition-colors"
+            disabled={isRefreshing}
+            className="bg-accent hover:bg-accent2 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-xs transition-all hover:scale-[1.02] flex items-center gap-2 disabled:opacity-50 cursor-pointer"
           >
-            ⚡ Re-run Verification on All
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+            <span>{isRefreshing ? "Evaluating…" : "Re-evaluate All"}</span>
           </button>
         </div>
       </div>
 
-      {/* Summary KPI Cards */}
+      {/* Summary KPI Cards — Bold visual treatment */}
       {summary && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-card border border-line rounded-card p-4 shadow-xs">
-            <div className="text-xs text-slate font-medium">Total Bids In Queue</div>
-            <div className="text-2xl font-bold text-ink mt-1 font-mono">{summary.total}</div>
-            <div className="text-[11px] text-slate mt-1">{summary.pending} awaiting officer decision</div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+          <div className="bg-card border border-line rounded-card p-5 shadow-xs flex items-center justify-between">
+            <div>
+              <div className="text-[11px] font-mono uppercase tracking-wider text-slate font-semibold">Total Queue</div>
+              <div className="text-3xl font-bold text-ink font-mono mt-1">{summary.total}</div>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-ink/5 text-ink flex items-center justify-center">
+              <FileStack className="w-5 h-5" />
+            </div>
           </div>
 
-          <div className="bg-card border border-line rounded-card p-4 shadow-xs">
-            <div className="text-xs font-medium text-fail">High Risk Signals</div>
-            <div className="text-2xl font-bold text-fail mt-1 font-mono">{summary.high}</div>
-            <div className="text-[11px] text-slate mt-1">Requires forensic review</div>
+          <div className="bg-card border border-line rounded-card p-5 shadow-xs flex items-center justify-between">
+            <div>
+              <div className="text-[11px] font-mono uppercase tracking-wider text-fail font-semibold">High Risk</div>
+              <div className="text-3xl font-bold text-fail font-mono mt-1">{summary.high}</div>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-failBg text-fail flex items-center justify-center">
+              <ShieldAlert className="w-5 h-5" />
+            </div>
           </div>
 
-          <div className="bg-card border border-line rounded-card p-4 shadow-xs">
-            <div className="text-xs font-medium text-review">Pending Officer Decision</div>
-            <div className="text-2xl font-bold text-review mt-1 font-mono">{summary.pending}</div>
-            <div className="text-[11px] text-slate mt-1">Human-in-the-loop gating</div>
+          <div className="bg-card border border-line rounded-card p-5 shadow-xs flex items-center justify-between">
+            <div>
+              <div className="text-[11px] font-mono uppercase tracking-wider text-review font-semibold">Pending Action</div>
+              <div className="text-3xl font-bold text-review font-mono mt-1">{summary.pending}</div>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-reviewBg text-review flex items-center justify-center">
+              <Clock className="w-5 h-5" />
+            </div>
           </div>
 
-          <div className="bg-card border border-line rounded-card p-4 shadow-xs">
-            <div className="text-xs font-medium text-pass">Decided / Verified</div>
-            <div className="text-2xl font-bold text-pass mt-1 font-mono">{summary.verified}</div>
-            <div className="text-[11px] text-slate mt-1">{summary.non_compliant} marked non-compliant</div>
+          <div className="bg-card border border-line rounded-card p-5 shadow-xs flex items-center justify-between">
+            <div>
+              <div className="text-[11px] font-mono uppercase tracking-wider text-pass font-semibold">Verified</div>
+              <div className="text-3xl font-bold text-pass font-mono mt-1">{summary.verified}</div>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-passBg text-pass flex items-center justify-center">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
           </div>
         </div>
       )}
 
       {/* Main Table Card */}
-      <div className="bg-card border border-line rounded-card overflow-hidden shadow-sm">
+      <div className="bg-card border border-line rounded-card overflow-hidden shadow-xs">
         {/* Table Filters Bar */}
-        <div className="px-5 py-3.5 border-b border-line bg-canvas/40 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-ink uppercase tracking-wider">Filter Risk:</span>
+        <div className="px-6 py-4 border-b border-line bg-canvas/40 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <Filter className="w-4 h-4 text-slate" />
+            <span className="text-xs font-semibold text-slate uppercase tracking-wider">Risk Filter:</span>
             {["ALL", "HIGH", "MEDIUM", "LOW"].map((r) => (
               <button
                 key={r}
                 onClick={() => setFilterRisk(r)}
-                className={`text-xs px-2.5 py-1 rounded-md font-semibold transition-all ${
+                className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
                   filterRisk === r
-                    ? "bg-accent text-white shadow-xs"
-                    : "bg-white border border-line text-slate hover:text-ink"
+                    ? "bg-ink text-white shadow-xs"
+                    : "bg-white border border-line text-slate hover:text-ink hover:border-slate/40"
                 }`}
               >
                 {r}
@@ -140,84 +180,121 @@ export default function OfficerDashboard() {
           </div>
 
           <div className="relative">
+            <Search className="w-4 h-4 text-slate absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search bidder or bid ID…"
-              className="bg-white border border-line rounded-lg px-3 py-1.5 text-xs text-ink focus:outline-none focus:border-accent w-56"
+              placeholder="Search entity or Bid ID…"
+              className="bg-white border border-line rounded-xl pl-9 pr-3.5 py-1.5 text-xs text-ink focus:outline-none focus:border-accent w-64 shadow-xs"
             />
           </div>
         </div>
 
-        {!bids && !error && <div className="px-5 py-12 text-center text-sm text-slate">Loading real-time bid queue…</div>}
-        {error && <div className="px-5 py-6 text-sm text-fail">{error}</div>}
+        {!bids && !error && (
+          <div className="px-6 py-16 text-center text-sm text-slate">
+            <div className="inline-block animate-spin mb-2">⚡</div>
+            <div>Loading live verification queue…</div>
+          </div>
+        )}
+        {error && <div className="px-6 py-6 text-sm text-fail bg-failBg/30">{error}</div>}
 
         {bids && (
-          <table className="w-full text-xs text-left">
-            <thead className="bg-canvas border-b border-line text-slate uppercase font-semibold">
-              <tr>
-                <th className="px-5 py-3">Bidder Entity</th>
-                <th className="px-5 py-3">GSTIN / Identifiers</th>
-                <th className="px-5 py-3">Tender</th>
-                <th className="px-5 py-3">Submission</th>
-                <th className="px-5 py-3">Compliance</th>
-                <th className="px-5 py-3">Risk Level</th>
-                <th className="px-5 py-3">Officer Decision</th>
-                <th className="px-5 py-3 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {filteredBids.length === 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-canvas border-b border-line text-slate uppercase font-semibold text-[11px] tracking-wider">
                 <tr>
-                  <td colSpan={8} className="px-5 py-8 text-center text-slate">
-                    No bids match the active filters.
-                  </td>
+                  <th className="px-6 py-3.5">Bidder Entity</th>
+                  <th className="px-6 py-3.5">Identifiers</th>
+                  <th className="px-6 py-3.5">Tender Target</th>
+                  <th className="px-6 py-3.5">Submission</th>
+                  <th className="px-6 py-3.5">Compliance</th>
+                  <th className="px-6 py-3.5">Risk Gauge</th>
+                  <th className="px-6 py-3.5">Officer Verdict</th>
+                  <th className="px-6 py-3.5 text-right">Review</th>
                 </tr>
-              ) : (
-                filteredBids.map((b) => (
-                  <tr
-                    key={b.bid_id}
-                    className="hover:bg-canvas/60 cursor-pointer transition-colors"
-                    onClick={() => navigate(`/officer/bids/${b.bid_id}`)}
-                  >
-                    <td className="px-5 py-3.5">
-                      <div className="font-bold text-ink">{b.bidder_org_name}</div>
-                      <div className="text-[11px] font-mono text-slate mt-0.5">ID: {b.bid_id}</div>
-                    </td>
-                    <td className="px-5 py-3.5 font-mono text-[11px] text-slate">
-                      {b.gstin || "—"}
-                    </td>
-                    <td className="px-5 py-3.5 text-slate max-w-[200px] truncate">
-                      {b.tender?.title || "—"}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <StatusBadge status={b.status} />
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <StatusBadge status={b.compliance_status} />
-                    </td>
-                    <td className="px-5 py-3.5">
-                      {b.risk_level ? (
-                        <div className="flex items-center gap-1.5">
-                          <StatusBadge status={b.risk_level} />
-                          <span className="font-mono text-[11px] text-slate font-medium">({b.risk_score})</span>
-                        </div>
-                      ) : (
-                        <span className="text-slate">Not evaluated</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <StatusBadge status={b.decision} />
-                    </td>
-                    <td className="px-5 py-3.5 text-right font-semibold text-accent hover:underline">
-                      Review Bid →
+              </thead>
+              <tbody className="divide-y divide-line">
+                {filteredBids.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-6 py-12 text-center text-slate">
+                      No bids match the active filters.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  filteredBids.map((b) => {
+                    // Risk left-border indicator
+                    const riskBorderCls =
+                      b.risk_level === "HIGH"
+                        ? "border-l-4 border-l-fail"
+                        : b.risk_level === "MEDIUM"
+                        ? "border-l-4 border-l-review"
+                        : "border-l-4 border-l-pass";
+
+                    return (
+                      <tr
+                        key={b.bid_id}
+                        className={`hover:bg-canvas/70 cursor-pointer transition-colors ${riskBorderCls}`}
+                        onClick={() => navigate(`/officer/bids/${b.bid_id}`)}
+                      >
+                        <td className="px-6 py-4">
+                          <div className="font-bold text-ink text-sm leading-tight">{b.bidder_org_name}</div>
+                          <div className="text-[11px] font-mono text-slate mt-0.5">ID: {b.bid_id}</div>
+                        </td>
+                        <td className="px-6 py-4 font-mono text-[11px] text-slate">
+                          <div>{b.gstin || "—"}</div>
+                          {b.udyam && <div className="text-[10px] text-accent mt-0.5">{b.udyam}</div>}
+                        </td>
+                        <td className="px-6 py-4 text-slate max-w-[220px]">
+                          <div className="truncate font-medium text-ink/80">{b.tender?.title || "—"}</div>
+                          <div className="text-[10px] font-mono text-slate">{b.tender?.organization}</div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <StatusBadge status={b.status} size="xs" />
+                        </td>
+                        <td className="px-6 py-4">
+                          <StatusBadge status={b.compliance_status} size="xs" />
+                        </td>
+                        <td className="px-6 py-4">
+                          {b.risk_level ? (
+                            <div className="flex items-center gap-2">
+                              <StatusBadge status={b.risk_level} size="xs" />
+                              <div className="w-10 bg-line h-1.5 rounded-full overflow-hidden shrink-0">
+                                <div
+                                  className={`h-full rounded-full ${
+                                    b.risk_level === "HIGH"
+                                      ? "bg-fail"
+                                      : b.risk_level === "MEDIUM"
+                                      ? "bg-review"
+                                      : "bg-pass"
+                                  }`}
+                                  style={{ width: `${Math.min(100, b.risk_score)}%` }}
+                                />
+                              </div>
+                              <span className="font-mono text-[11px] text-slate font-medium">
+                                {b.risk_score}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-slate">—</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <StatusBadge status={b.decision} size="xs" />
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <span className="inline-flex items-center gap-1 font-semibold text-accent hover:text-accent2 text-xs">
+                            <span>Open</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </Shell>
