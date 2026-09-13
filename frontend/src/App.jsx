@@ -1,6 +1,7 @@
 import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/auth.jsx";
+import GovernmentLayout from "./components/GovernmentLayout.jsx";
 import Login from "./pages/Login.jsx";
 import LandingPage from "./pages/LandingPage.jsx";
 import OfficerDashboard from "./pages/OfficerDashboard.jsx";
@@ -9,13 +10,25 @@ import AuditTrail from "./pages/AuditTrail.jsx";
 import BidderTenders from "./pages/BidderTenders.jsx";
 import TenderDetail from "./pages/TenderDetail.jsx";
 import BidderSubmissionFlow from "./pages/BidderSubmissionFlow.jsx";
+import BidderApplicationRefactored from "./pages/BidderApplicationRefactored.jsx";
 import BidderStatusTracker from "./pages/BidderStatusTracker.jsx";
+import BidderReadiness from "./pages/BidderReadiness.jsx";
+import OfficerCreateTender from "./pages/OfficerCreateTender.jsx";
 
 function RequireRole({ role, children }) {
-  const { session } = useAuth();
+  const { session, logout } = useAuth();
   if (!session) return <Navigate to="/login" replace />;
   if (session.role !== role) return <Navigate to={session.role === "officer" ? "/officer" : "/bidder"} replace />;
-  return children;
+  
+  return (
+    <GovernmentLayout
+      user={session}
+      userRole={session.role}
+      onLogout={logout}
+    >
+      {children}
+    </GovernmentLayout>
+  );
 }
 
 function AppRoutes() {
@@ -27,15 +40,17 @@ function AppRoutes() {
 
       {/* Officer Portal */}
       <Route path="/officer" element={<RequireRole role="officer"><OfficerDashboard /></RequireRole>} />
+      <Route path="/officer/tenders/create" element={<RequireRole role="officer"><OfficerCreateTender /></RequireRole>} />
       <Route path="/officer/bids/:bidId" element={<RequireRole role="officer"><BidDetail /></RequireRole>} />
       <Route path="/officer/audit" element={<RequireRole role="officer"><AuditTrail /></RequireRole>} />
 
       {/* Bidder Portal (Complete Connected Workflow) */}
       <Route path="/bidder" element={<RequireRole role="bidder"><BidderTenders /></RequireRole>} />
       <Route path="/bidder/tenders/:tenderId" element={<RequireRole role="bidder"><TenderDetail /></RequireRole>} />
-      <Route path="/bidder/apply/:bidId" element={<RequireRole role="bidder"><BidderSubmissionFlow /></RequireRole>} />
-      <Route path="/bidder/bids/:bidId/submit" element={<RequireRole role="bidder"><BidderSubmissionFlow /></RequireRole>} />
-      <Route path="/bidder/readiness" element={<RequireRole role="bidder"><BidderSubmissionFlow /></RequireRole>} />
+      <Route path="/bidder/apply/:bidId" element={<RequireRole role="bidder"><BidderApplicationRefactored /></RequireRole>} />
+      <Route path="/bidder/bids/:bidId/submit" element={<RequireRole role="bidder"><BidderApplicationRefactored /></RequireRole>} />
+      <Route path="/bidder/readiness/:bidId" element={<RequireRole role="bidder"><BidderReadiness /></RequireRole>} />
+      <Route path="/bidder/readiness" element={<RequireRole role="bidder"><BidderReadiness /></RequireRole>} />
       <Route path="/bidder/status/:bidId" element={<RequireRole role="bidder"><BidderStatusTracker /></RequireRole>} />
 
       <Route path="*" element={<Navigate to="/" replace />} />

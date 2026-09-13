@@ -4,6 +4,46 @@ import Shell from "../components/Shell.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 import { api } from "../lib/api.js";
 
+// Validation helpers
+const validateGSTIN = (gstin) => /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]$/.test(gstin || "");
+const validatePAN = (pan) => /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan || "");
+const validateCIN = (cin) => !cin || /^[A-Z]{1}[0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$/.test(cin);
+const validateUdyam = (udyam) => !udyam || /^UDYAM-[A-Z]{2}-[0-9]{2}-[0-9]{7}$/.test(udyam);
+const validateTurnover = (turnover) => {
+  const num = parseFloat(turnover);
+  return !isNaN(num) && num > 0;
+};
+const validateProjects = (count) => {
+  const num = parseInt(count);
+  return !isNaN(num) && num >= 0;
+};
+
+const getValidationErrors = (data) => {
+  const errors = {};
+  if (!data.bidder_org_name || data.bidder_org_name.trim().length < 3) {
+    errors.bidder_org_name = "Name must be at least 3 characters";
+  }
+  if (!validateGSTIN(data.gstin)) {
+    errors.gstin = "Invalid GSTIN (15 chars: 22ABCDE1234F1Z5)";
+  }
+  if (!validatePAN(data.pan)) {
+    errors.pan = "Invalid PAN (10 chars: ABCDE1234F)";
+  }
+  if (!validateCIN(data.cin)) {
+    errors.cin = "Invalid CIN format";
+  }
+  if (!validateUdyam(data.udyam_number)) {
+    errors.udyam_number = "Invalid Udyam (UDYAM-XX-12-0012345)";
+  }
+  if (!validateTurnover(data.annual_turnover)) {
+    errors.annual_turnover = "Turnover must be positive";
+  }
+  if (!validateProjects(data.similar_project_count)) {
+    errors.similar_project_count = "Must be non-negative";
+  }
+  return errors;
+};
+
 const PRESET_SCENARIOS = [
   {
     key: "clean",
@@ -67,24 +107,29 @@ export default function BidderSubmissionFlow() {
   const { bidId } = useParams();
   const navigate = useNavigate();
 
-  const [step, setStep] = useState(1); // 1: Entity Info, 2: Upload Docs, 3: Two-Stage Verification, 4: Submit
+  const [step, setStep] = useState(1); // 1: Upload Docs (Extract), 2: Auto-populated Form (Verify), 3: Verification Results, 4: Submit
   const [bid, setBid] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState(null);
 
-  // Form State
+  // Form State - Now auto-populated from OCR
   const [formData, setFormData] = useState({
-    bidder_org_name: "Northline Engineering Pvt Ltd",
-    gstin: "22ABCDE1234F1Z5",
-    pan: "ABCDE1234F",
-    cin: "U17124CT2015PTC098765",
-    udyam_number: "UDYAM-CT-02-0012345",
-    annual_turnover: 18500000,
-    similar_project_count: 4,
-    emd_paid: true,
+    bidder_org_name: "",
+    gstin: "",
+    pan: "",
+    cin: "",
+    udyam_number: "",
+    annual_turnover: "",
+    similar_project_count: "",
+    emd_paid: false,
     msme_exemption: false,
   });
+
+  // OCR Extraction State
+  const [extractedData, setExtractedData] = useState(null);
+  const [extractionProgress, setExtractionProgress] = useState(0);
+  const [isExtracting, setIsExtracting] = useState(false);
 
   // Documents State
   const [uploadedDocs, setUploadedDocs] = useState([]);
@@ -96,6 +141,17 @@ export default function BidderSubmissionFlow() {
   const [verifyingStage1, setVerifyingStage1] = useState(false);
   const [verifyingStage2, setVerifyingStage2] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [validationErrors, setValidationErrors] = useState({});
+
+  // Cross-Verification State
+  const [verificationResults, setVerificationResults] = useState({
+    gstin: null,
+    pan: null,
+    cin: null,
+    udyam: null,
+  });
+  const [isVerifyingGov, setIsVerifyingGov] = useState(false);
+  const [verificationStatus, setVerificationStatus] = useState("pending"); // pending, verified, mismatch, failed
 
   useEffect(() => {
     async function init() {
@@ -167,6 +223,140 @@ export default function BidderSubmissionFlow() {
     REQUIRED_SLOTS.forEach((s) => {
       handleFileUpload(s.doc_type, syntheticFile);
     });
+  }
+
+  // NEW: Extract company details from uploaded documents using OCR
+  async function extractAndAutoPopulate() {
+    setIsExtracting(true);
+    setExtractionProgress(0);
+    setError("");
+    try {
+      setExtractionProgress(20);
+      // Call backend to extract text from all uploaded documents
+      const extraction = await api.bidderExtractDocuments(bidId);
+      setExtractionProgress(50);
+
+      if (extraction?.extracted_fields) {
+        // Auto-populate form with extracted data
+        const extracted = extraction.extracted_fields;
+        setExtractedData(extraction);
+        
+        const newFormData = {
+          bidder_org_name: extracted.company_name || extracted.organization_name || "",
+          gstin: extracted.gstin || "",
+          pan: extracted.pan || "",
+          cin: extracted.cin || extracted.company_registration_number || "",
+          udyam_number: extracted.udyam_number || extracted.msme_registration || "",
+          annual_turnover: extracted.annual_turnover ? parseFloat(extracted.annual_turnover) : "",
+          similar_project_count: extracted.project_count ? parseInt(extracted.project_count) : 0,
+          emd_paid: extracted.emd_paid ?? false,
+          msme_exemption: extracted.is_msme ?? false,
+        };
+        
+        setFormData(newFormData);
+        setExtractionProgress(70);
+        setNotice("✓ Details extracted from documents and auto-populated!");
+        
+        // Now cross-verify with government databases
+        setExtractionProgress(85);
+        await crossVerifyWithGovDatabases(newFormData);
+        setExtractionProgress(100);
+      } else {
+        setError("No extractable data found in uploaded documents");
+      }
+    } catch (err) {
+      setError(err.message || "Failed to extract document data");
+    } finally {
+      setIsExtracting(false);
+      setExtractionProgress(0);
+    }
+  }
+
+  // NEW: Cross-verify extracted data with government databases (GSTIN, PAN, MCA, Udyam)
+  async function crossVerifyWithGovDatabases(data) {
+    setIsVerifyingGov(true);
+    setVerificationStatus("pending");
+    try {
+      const results = {};
+      let allMatched = true;
+
+      // Verify GSTIN
+      if (data.gstin) {
+        try {
+          const gstinRes = await api.verifyGSTIN({ gstin: data.gstin, company_name: data.bidder_org_name });
+          results.gstin = {
+            status: gstinRes.status === "verified" ? "match" : "mismatch",
+            data: gstinRes,
+            registered_name: gstinRes.registered_name,
+            matches: gstinRes.registered_name?.toLowerCase() === data.bidder_org_name?.toLowerCase(),
+          };
+          if (!results.gstin.matches) allMatched = false;
+        } catch (e) {
+          results.gstin = { status: "error", error: e.message };
+          allMatched = false;
+        }
+      }
+
+      // Verify PAN
+      if (data.pan) {
+        try {
+          const panRes = await api.verifyPAN({ pan: data.pan });
+          results.pan = {
+            status: panRes.status === "verified" ? "match" : "mismatch",
+            data: panRes,
+          };
+          if (panRes.status !== "verified") allMatched = false;
+        } catch (e) {
+          results.pan = { status: "error", error: e.message };
+          allMatched = false;
+        }
+      }
+
+      // Verify CIN (Company Registration)
+      if (data.cin) {
+        try {
+          const cinRes = await api.verifyCIN({ cin: data.cin });
+          results.cin = {
+            status: cinRes.status === "verified" ? "match" : "mismatch",
+            data: cinRes,
+          };
+          if (cinRes.status !== "verified") allMatched = false;
+        } catch (e) {
+          results.cin = { status: "error", error: e.message };
+          allMatched = false;
+        }
+      }
+
+      // Verify Udyam (MSME)
+      if (data.udyam_number) {
+        try {
+          const udyamRes = await api.verifyUdyam({ udyam_number: data.udyam_number });
+          results.udyam = {
+            status: udyamRes.status === "verified" ? "match" : "mismatch",
+            data: udyamRes,
+          };
+          if (udyamRes.status !== "verified") allMatched = false;
+        } catch (e) {
+          results.udyam = { status: "error", error: e.message };
+        }
+      }
+
+      setVerificationResults(results);
+      setVerificationStatus(allMatched ? "verified" : "mismatch");
+      setNotice(
+        allMatched
+          ? "✓ All details verified with government databases!"
+          : "⚠ Some details don't match government records. Please review."
+      );
+      
+      // Move to verification results step
+      setStep(3);
+    } catch (err) {
+      setVerificationStatus("failed");
+      setError("Failed to verify with government databases: " + err.message);
+    } finally {
+      setIsVerifyingGov(false);
+    }
   }
 
   async function runStage1() {
@@ -316,9 +506,12 @@ export default function BidderSubmissionFlow() {
                   type="text"
                   value={formData.gstin}
                   onChange={(e) => setFormData({ ...formData, gstin: e.target.value.toUpperCase() })}
-                  className="w-full bg-canvas border border-line rounded-lg px-3.5 py-2 font-mono text-sm text-ink focus:outline-none focus:border-accent uppercase"
+                  className={`w-full bg-canvas border rounded-lg px-3.5 py-2 font-mono text-sm text-ink focus:outline-none uppercase ${
+                    validationErrors.gstin ? "border-red-500 focus:border-red-600" : "border-line focus:border-accent"
+                  }`}
                   placeholder="22ABCDE1234F1Z5"
                 />
+                {validationErrors.gstin && <p className="text-xs text-red-600 mt-1">{validationErrors.gstin}</p>}
               </div>
 
               <div>
@@ -327,9 +520,12 @@ export default function BidderSubmissionFlow() {
                   type="text"
                   value={formData.pan}
                   onChange={(e) => setFormData({ ...formData, pan: e.target.value.toUpperCase() })}
-                  className="w-full bg-canvas border border-line rounded-lg px-3.5 py-2 font-mono text-sm text-ink focus:outline-none focus:border-accent uppercase"
+                  className={`w-full bg-canvas border rounded-lg px-3.5 py-2 font-mono text-sm text-ink focus:outline-none uppercase ${
+                    validationErrors.pan ? "border-red-500 focus:border-red-600" : "border-line focus:border-accent"
+                  }`}
                   placeholder="ABCDE1234F"
                 />
+                {validationErrors.pan && <p className="text-xs text-red-600 mt-1">{validationErrors.pan}</p>}
               </div>
 
               <div>
@@ -378,7 +574,17 @@ export default function BidderSubmissionFlow() {
             <div className="mt-6 pt-5 border-t border-line flex items-center justify-between">
               <span className="text-xs text-slate">Step 1 of 4</span>
               <button
-                onClick={() => setStep(2)}
+                onClick={() => {
+                  const errors = getValidationErrors(formData);
+                  if (Object.keys(errors).length > 0) {
+                    setValidationErrors(errors);
+                    setError("Please fix validation errors above");
+                    return;
+                  }
+                  setValidationErrors({});
+                  setError("");
+                  setStep(2);
+                }}
                 className="bg-accent hover:bg-accent2 text-white text-sm font-medium px-6 py-2.5 rounded-lg shadow-sm transition-colors"
               >
                 Proceed to Document Upload →

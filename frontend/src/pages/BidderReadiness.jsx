@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams, useNavigate, useParams } from "react-router-dom";
 import Shell from "../components/Shell.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 import { api } from "../lib/api.js";
@@ -59,8 +59,9 @@ function ReadinessRing({ percent = 0, isComplete = false }) {
 }
 
 export default function BidderReadiness() {
+  const { bidId: routeBidId } = useParams();
   const [searchParams] = useSearchParams();
-  const [bidId, setBidId] = useState(searchParams.get("bidId") || "bid-northline");
+  const [bidId, setBidId] = useState(routeBidId || searchParams.get("bidId"));
   const [bids, setBids] = useState([]);
   const [readiness, setReadiness] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -72,6 +73,16 @@ export default function BidderReadiness() {
   const [bidStatus, setBidStatus] = useState(null);
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
+
+  // Load bids and set default if bidId not provided
+  useEffect(() => {
+    api.bidderBids().then((bidList) => {
+      setBids(bidList);
+      if (!bidId && bidList.length > 0) {
+        setBidId(bidList[0].id);
+      }
+    });
+  }, []);
 
   async function load(id) {
     setLoading(true);
@@ -90,10 +101,14 @@ export default function BidderReadiness() {
   }
 
   useEffect(() => {
-    load(bidId);
+    if (bidId) {
+      load(bidId);
+    }
   }, [bidId]);
 
   useEffect(() => {
+    if (!bidId) return;
+
     let cancelled = false;
     async function refreshStatus() {
       try {
@@ -113,10 +128,6 @@ export default function BidderReadiness() {
       window.clearInterval(refreshTimer);
     };
   }, [bidId]);
-
-  useEffect(() => {
-    api.bidderBids().then(setBids);
-  }, []);
 
   const missingItems = readiness?.items.filter((i) => i.status === "MISSING") || [];
   const reviewItems = readiness?.items.filter((i) => i.status === "REVIEW" || i.status === "WEAK_EVIDENCE") || [];

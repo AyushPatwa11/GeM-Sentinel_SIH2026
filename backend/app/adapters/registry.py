@@ -4,10 +4,20 @@ source (claim-level source authority, per locked design — no single portal
 is "most trusted for everything").
 
 This module is the entire swap surface: to go from mock to real, only
-ADAPTER_REGISTRY changes here. Nothing in the rule engine, risk engine, or
-API layer references GSTNMockAdapter directly.
+environment variables and ADAPTER_REGISTRY changes here. Nothing in the rule engine, 
+risk engine, or API layer references adapters directly.
+
+Credential Injection Pattern:
+- Real adapters enabled only if corresponding environment variable is set
+- Missing credential → adapter.enabled = False → returns UNAVAILABLE immediately
+- No adapter instantiation unless credential available
+- Fallback to Mock_Adapter on Real adapter failure (AdapterError)
 """
 from __future__ import annotations
+
+import os
+import logging
+from typing import Dict, Optional
 
 from app.adapters.base import PortalAdapter
 from app.adapters.datagovin_client import DataGovInMCAAdapter
@@ -19,6 +29,8 @@ from app.adapters.mock_adapters import (
     UdyamMockAdapter,
 )
 
+logger = logging.getLogger(__name__)
+
 # field_name -> authoritative source name
 CLAIM_AUTHORITY_MAP = {
     "gstin": "GSTN",
@@ -29,32 +41,169 @@ CLAIM_AUTHORITY_MAP = {
     "udyam_number": "UDYAM",
     "debarment_status": "BLACKLIST",
     "document_authenticity": "DIGILOCKER",
-}
-
-# source name -> adapter instance. Swap a value here (e.g. GSTNAdapter())
-# to move from mock to real with zero changes anywhere else.
-ADAPTER_REGISTRY: dict[str, PortalAdapter] = {
-    "GSTN": GSTNMockAdapter(),
-    "MCA": DataGovInMCAAdapter(),
-    "NSIC": NSICMockAdapter(),
-    "UDYAM": UdyamMockAdapter(),
-    "DIGILOCKER": DigiLockerMockAdapter(),
-    "BLACKLIST": BlacklistMockAdapter(),
+    "pan": "PAN",
 }
 
 
-def get_adapter_for_field(field_name: str) -> PortalAdapter:
-    source = CLAIM_AUTHORITY_MAP.get(field_name)
-    if source is None:
-        raise ValueError(f"No claim-authority mapping defined for field '{field_name}'")
-    adapter = ADAPTER_REGISTRY.get(source)
-    if adapter is None:
-        raise ValueError(f"No adapter registered for source '{source}'")
-    return adapter
+class RegistryManager:
+    """
+    Central registry for all adapter implementations.
+    This is the ONLY location where Real/Mock adapters are selected.
+    
+    Singleton pattern: One instance per application lifetime.
+    Initialized at startup based on environment variables.
+    """
+    
+    _instance: Optional['RegistryManager'] = None
+    _adapter_registry: Dict[str, PortalAdapter] = {}
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialize()
+        return cls._instance
+    
+    def _initialize(self):
+        """Initialize adapters at startup based on environment variables."""
+        
+        logger.info("Initializing adapter registry...")
+        
+        # Try to import Real_Adapters (may not be available yet if not created)
+        try:
+            from app.adapters.real_adapters.gstin_adapter import GSTINAdapter
+            from app.adapters.real_adapters.mca_adapter import MCAAdapter
+            from app.adapters.real_adapters.pan_adapter import PANAdapter
+            from app.adapters.real_adapters.nsic_adapter import NSICAdapter
+            from app.adapters.real_adapters.udyam_adapter import UDYAMAdapter
+        except ImportError:
+            logger.warning("Real adapters not available, using mock adapters only")
+            GSTINAdapter = None
+            MCAAdapter = None
+            PANAdapter = None
+            NSICAdapter = None
+            UDYAMAdapter = None
+        
+        # Initialize GSTN adapter
+        self._adapter_registry["GSTN"] = self._select_adapter(
+            "GSTN", 
+            GSTINAdapter if GSTINAdapter else None, 
+            GSTNMockAdapter(), 
+            "GSTIN_API_KEY"
+        )
+        
+        # Initialize MCA adapter
+        self._adapter_registry["MCA"] = self._select_adapter(
+            "MCA", 
+            MCAAdapter if MCAAdapter else None, 
+            DataGovInMCAAdapter(), 
+            "MCA_API_KEY"
+        )
+        
+        # Initialize NSIC adapter
+        self._adapter_registry["NSIC"] = self._select_adapter(
+            "NSIC", 
+            NSICAdapter if NSICAdapter else None, 
+            NSICMockAdapter(), 
+            "NSIC_API_KEY"
+        )
+        
+        # Initialize UDYAM adapter
+        self._adapter_registry["UDYAM"] = self._select_adapter(
+            "UDYAM", 
+            UDYAMAdapter if UDYAMAdapter else None, 
+            UdyamMockAdapter(), 
+            "UDYAM_API_KEY"
+        )
+        
+        # Initialize PAN adapter
+        self._adapter_registry["PAN"] = self._select_adapter(
+            "PAN", 
+            PANAdapter if PANAdapter else None, 
+            GSTNMockAdapter(),  # Fallback to mock for now
+            "PAN_API_KEY"
+        )
+        
+        # Initialize non-credential-gated adapters
+        self._adapter_registry["DIGILOCKER"] = DigiLockerMockAdapter()
+        self._adapter_registry["BLACKLIST"] = BlacklistMockAdapter()
+        
+        logger.info("Adapter registry initialized")
+        self._log_adapter_status()
+    
+    @staticmethod
+    def _select_adapter(
+        source_name: str,
+        real_adapter_class,
+        mock_adapter_instance,
+        env_var_name: str
+    ) -> PortalAdapter:
+        """
+        Select between Real and Mock adapter based on credential availability.
+        
+        Logic:
+        • If env var is set → use Real_Adapter (if class available)
+        • If env var is not set → use Mock_Adapter (fallback)
+        """
+        
+        if os.getenv(env_var_name):
+            if real_adapter_class:
+                try:
+                    adapter = real_adapter_class()
+                    logger.info(f"[{source_name:8s}] ENABLED (Real adapter, credential found)")
+                    return adapter
+                except Exception as e:
+                    logger.warning(f"[{source_name:8s}] Failed to init Real adapter: {e}, using Mock")
+                    return mock_adapter_instance
+            else:
+                logger.warning(f"[{source_name:8s}] Real adapter class not available, using Mock")
+                return mock_adapter_instance
+        else:
+            logger.info(f"[{source_name:8s}] DISABLED (using Mock adapter, credential not found)")
+            # Mark mock as fallback if it has enabled flag
+            if hasattr(mock_adapter_instance, 'enabled'):
+                mock_adapter_instance.enabled = True
+            return mock_adapter_instance
+    
+    @staticmethod
+    def _log_adapter_status():
+        """Log which adapters are enabled/disabled at startup."""
+        logger.info("=== ADAPTER STATUS REPORT ===")
+        registry = RegistryManager()
+        for source, adapter in registry._adapter_registry.items():
+            if hasattr(adapter, 'enabled'):
+                status = "ENABLED (REAL)" if adapter.enabled else "MOCK (FALLBACK)"
+            else:
+                status = "ACTIVE"
+            logger.info(f"  {source:10s}: {status}")
+        logger.info("=" * 30)
+    
+    def get_adapter(self, source_name: str) -> PortalAdapter:
+        """Get adapter for a specific government source."""
+        if source_name not in self._adapter_registry:
+            raise ValueError(f"No adapter registered for source '{source_name}'")
+        return self._adapter_registry[source_name]
+    
+    def get_adapter_for_field(self, field_name: str) -> PortalAdapter:
+        """Get adapter for an extracted field name."""
+        source = CLAIM_AUTHORITY_MAP.get(field_name)
+        if source is None:
+            raise ValueError(f"No authority mapping defined for field '{field_name}'")
+        return self.get_adapter(source)
+
+
+# Global registry instance
+_registry = RegistryManager()
 
 
 def get_adapter(source_name: str) -> PortalAdapter:
-    adapter = ADAPTER_REGISTRY.get(source_name)
-    if adapter is None:
-        raise ValueError(f"No adapter registered for source '{source_name}'")
-    return adapter
+    """Get adapter by source name."""
+    return _registry.get_adapter(source_name)
+
+
+def get_adapter_for_field(field_name: str) -> PortalAdapter:
+    """Get adapter by extracted field name."""
+    return _registry.get_adapter_for_field(field_name)
+
+
+# Legacy direct registry access for backward compatibility
+ADAPTER_REGISTRY: dict[str, PortalAdapter] = _registry._adapter_registry

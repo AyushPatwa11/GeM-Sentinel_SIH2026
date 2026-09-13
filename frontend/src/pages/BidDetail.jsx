@@ -148,7 +148,7 @@ export default function BidDetail() {
   }
 
   async function submitDecision(decision) {
-    const diverges = decision !== bid.ai_recommendation;
+    const diverges = decision !== (bid?.ai_recommendation || "REVIEW");
     if (diverges && !overrideReason.trim() && pendingDecision !== decision) {
       setPendingDecision(decision);
       return;
@@ -220,15 +220,15 @@ export default function BidDetail() {
           <div className="flex flex-wrap items-center gap-6 pt-2 sm:pt-0">
             {/* Radial Risk Gauge */}
             <RiskGauge
-              score={bid.risk_assessment.total_score}
-              level={bid.risk_assessment.risk_level}
+              score={bid.risk_assessment?.total_score || 0}
+              level={bid.risk_assessment?.risk_level || "UNKNOWN"}
             />
 
             <div className="h-10 w-[1px] bg-line hidden sm:block" />
 
             <div className="space-y-1 text-right">
               <div className="text-[10px] font-mono uppercase tracking-wider text-slate font-semibold">Compliance</div>
-              <div><StatusBadge status={bid.compliance_status} /></div>
+              <div><StatusBadge status={bid.compliance_status || "PENDING"} /></div>
             </div>
 
             <div className="space-y-1 text-right">
@@ -250,12 +250,12 @@ export default function BidDetail() {
                 <span>Explainable AI Recommendation</span>
               </div>
               <span className="text-xs font-mono text-slate">
-                Policy: {bid.risk_assessment.policy_version}
+                Policy: {bid.risk_assessment?.policy_version || "v1.0"}
               </span>
             </div>
 
             <div className="text-xl font-display font-bold text-ink">
-              Recommended Verdict: <span className="text-accent">{bid.ai_recommendation}</span>
+              Recommended Verdict: <span className="text-accent">{bid.ai_recommendation || "REVIEW"}</span>
             </div>
 
             <p className="text-xs text-slate mt-2 leading-relaxed">
@@ -263,12 +263,74 @@ export default function BidDetail() {
             </p>
           </div>
 
+          {/* Documents Section */}
+          <div className="bg-card border border-line rounded-card p-6 shadow-xs">
+            <h2 className="text-base font-bold text-ink mb-1">Submitted Documents</h2>
+            <p className="text-xs text-slate mb-4">
+              All documents submitted by the bidder with verification status
+            </p>
+
+            {bid.documents && bid.documents.length > 0 ? (
+              <div className="space-y-3">
+                {bid.documents.map((doc) => (
+                  <div key={doc.id} className="p-4 bg-canvas border border-line rounded-lg">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <FileCheck className="w-4 h-4 text-slate" />
+                          <span className="font-semibold text-ink text-sm truncate">{doc.name || doc.file_name || "Document"}</span>
+                          <span className="text-[10px] font-mono text-slate bg-white px-1.5 py-0.5 rounded border border-line">
+                            {doc.document_type || "GENERAL"}
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate mt-1">
+                          Uploaded: {doc.uploaded_at ? new Date(doc.uploaded_at).toLocaleString() : "Unknown"}
+                        </div>
+                      </div>
+                      {doc.status ? (
+                        <StatusBadge status={doc.status} size="xs" />
+                      ) : (
+                        <span className="text-[10px] font-mono text-slate px-2.5 py-1 bg-white rounded-md border border-line">
+                          Uploaded
+                        </span>
+                      )}
+                    </div>
+
+                    {/* OCR Status */}
+                    {doc.ocr_status && (
+                      <div className="mt-2 text-xs text-slate">
+                        OCR Status: <span className="font-semibold text-ink">{doc.ocr_status}</span>
+                      </div>
+                    )}
+
+                    {/* Extracted Fields */}
+                    {doc.extracted_fields && Object.keys(doc.extracted_fields).length > 0 && (
+                      <div className="mt-3 p-2.5 bg-white border border-line rounded-lg text-xs space-y-1">
+                        <div className="font-semibold text-ink mb-1">Extracted Data:</div>
+                        {Object.entries(doc.extracted_fields).map(([key, value]) => (
+                          <div key={key} className="flex justify-between gap-2">
+                            <span className="text-slate font-mono">{key}:</span>
+                            <span className="text-ink font-semibold">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-6 text-center bg-canvas/50 rounded-lg border border-dashed border-line">
+                <p className="text-xs text-slate">No documents submitted yet</p>
+              </div>
+            )}
+          </div>
+
           {/* Clause-by-Clause Evaluation Rows */}
           <div className="bg-card border border-line rounded-card p-6 shadow-xs">
             <div className="flex items-center justify-between mb-1">
               <h2 className="text-base font-bold text-ink">Deterministic Clause Verification</h2>
               <span className="text-xs font-mono text-slate">
-                {bid.compliance_results.filter((c) => c.status === "PASS").length}/{bid.compliance_results.length} Passing
+                {(bid.compliance_results || []).filter((c) => c.status === "PASS").length}/{(bid.compliance_results || []).length} Passing
               </span>
             </div>
             <p className="text-xs text-slate mb-5">
@@ -276,7 +338,7 @@ export default function BidDetail() {
             </p>
 
             <div className="space-y-3">
-              {bid.compliance_results.map((c) => {
+              {(bid.compliance_results || []).map((c) => {
                 const isPass = c.status === "PASS";
                 const isFail = c.status === "FAIL";
                 const isExpanded = expandedReasoning[c.clause_id];
@@ -428,10 +490,10 @@ export default function BidDetail() {
           <div className="bg-card border border-line rounded-card p-6 shadow-xs">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-base font-bold text-ink">Risk Signals</h2>
-              <StatusBadge status={bid.risk_assessment.risk_level} size="xs" />
+              <StatusBadge status={bid.risk_assessment?.risk_level || "UNKNOWN"} size="xs" />
             </div>
 
-            {bid.risk_assessment.signals?.length > 0 ? (
+            {(bid.risk_assessment?.signals || []).length > 0 ? (
               <div className="space-y-3.5">
                 {bid.risk_assessment.signals.map((sig, i) => {
                   const contrib = sig.contribution || 10;
@@ -475,14 +537,14 @@ export default function BidDetail() {
               Officer decision is binding and cryptographically logged to the audit ledger.
             </p>
 
-            {pendingDecision && pendingDecision !== bid.ai_recommendation && (
+            {pendingDecision && pendingDecision !== (bid?.ai_recommendation || "REVIEW") && (
               <div className="mb-4 p-3.5 bg-reviewBg/60 border border-review/40 rounded-xl text-xs space-y-2">
                 <div className="font-bold text-review flex items-center gap-1.5">
                   <AlertTriangle className="w-4 h-4 shrink-0" />
                   <span>Mandatory Override Justification</span>
                 </div>
                 <p className="text-slate text-[11px] leading-relaxed">
-                  You are selecting <strong>{pendingDecision}</strong> which diverges from AI recommendation <strong>{bid.ai_recommendation}</strong>. Enter statutory justification below:
+                  You are selecting <strong>{pendingDecision}</strong> which diverges from AI recommendation <strong>{bid?.ai_recommendation || "REVIEW"}</strong>. Enter statutory justification below:
                 </p>
                 <textarea
                   value={overrideReason}

@@ -50,3 +50,19 @@ frontend/dist-ssr/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Legacy / Backup Files (to prevent future accumulation)
+*_legacy.py
+*_backup.py
+*_old.py
+*_phase0*.py
+backup/
+legacy/
+old_*.md
+*_PHASE_*.md
+*_WAVE_*.md
+
+# Video/Media files
+*.mp4
+*.avi
+*.mov

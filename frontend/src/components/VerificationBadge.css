@@ -1,0 +1,144 @@
+/**
+ * VerificationBadge Styles
+ * 
+ * Compact, accessible badge for displaying verification status
+ * with hover effects and mobile support
+ */
+
+.verification-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 2px solid;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  user-select: none;
+}
+
+.verification-badge:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
+}
+
+.verification-badge:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.verification-badge.clickable {
+  cursor: pointer;
+}
+
+.verification-badge .badge-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+  min-width: 16px;
+}
+
+.verification-badge .badge-label {
+  font-size: 12px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.verification-badge .fallback-indicator {
+  display: inline-block;
+  padding: 1px 6px;
+  margin-left: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  opacity: 0.7;
+  border-radius: 3px;
+  background-color: rgba(0, 0, 0, 0.1);
+  text-transform: uppercase;
+}
+
+/* Status-specific styles for better visual hierarchy */
+.verification-badge[style*='#4CAF50'] {
+  /* VERIFIED - green */
+  font-weight: 600;
+}
+
+.verification-badge[style*='#F44336'] {
+  /* MISMATCH or ERROR - red */
+  font-weight: 600;
+}
+
+.verification-badge[style*='#FF9800'] {
+  /* INCONCLUSIVE - orange */
+}
+
+.verification-badge[style*='#9E9E9E'] {
+  /* UNAVAILABLE - gray */
+  opacity: 0.8;
+}
+
+.verification-badge[style*='#2196F3'] {
+  /* PENDING - blue */
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Responsive design for smaller screens */
+@media (max-width: 640px) {
+  .verification-badge {
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+
+  .verification-badge .badge-icon {
+    font-size: 12px;
+    min-width: 14px;
+  }
+
+  .verification-badge .badge-label {
+    font-size: 11px;
+  }
+
+  .verification-badge .fallback-indicator {
+    display: none; /* Hide on mobile to save space */
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: more) {
+  .verification-badge {
+    border-width: 3px;
+    font-weight: 700;
+  }
+
+  .verification-badge .badge-icon {
+    font-weight: 900;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .verification-badge {
+    transition: none;
+  }
+
+  .verification-badge:hover {
+    transform: none;
+  }
+
+  .verification-badge[style*='#2196F3'] {
+    animation: none;
+  }
+}

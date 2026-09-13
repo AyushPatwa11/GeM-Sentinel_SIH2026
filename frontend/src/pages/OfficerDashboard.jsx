@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import Shell from "../components/Shell.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 import { api } from "../lib/api.js";
 import {
@@ -17,17 +16,29 @@ import {
 
 export default function OfficerDashboard() {
   const [bids, setBids] = useState(null);
+  const [tenders, setTenders] = useState(null);
   const [filterRisk, setFilterRisk] = useState("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState("");
   const [lastSync, setLastSync] = useState(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState("bids"); // 'bids' or 'tenders'
   const navigate = useNavigate();
 
   async function load() {
     try {
-      const data = await api.officerBids();
-      setBids(data);
+      const bidsData = await api.officerBids();
+      setBids(bidsData);
+      
+      // Fetch tenders list
+      try {
+        const tendersData = await api.officerTenders();
+        setTenders(tendersData);
+      } catch (e) {
+        // Tenders endpoint might not exist, that's okay
+        setTenders([]);
+      }
+      
       setLastSync(new Date());
     } catch (e) {
       setError(e.message);
@@ -65,11 +76,11 @@ export default function OfficerDashboard() {
     : null;
 
   const filteredBids = (bids || []).filter((b) => {
-    if (filterRisk !== "ALL" && b.risk_level !== filterRisk) return false;
+    if (filterRisk !== "ALL" && (b.risk_level || "UNKNOWN") !== filterRisk) return false;
     if (
       searchQuery &&
-      !b.bidder_org_name.toLowerCase().includes(searchQuery.toLowerCase()) &&
-      !b.bid_id.toLowerCase().includes(searchQuery.toLowerCase())
+      !(b.bidder_org_name || "").toLowerCase().includes(searchQuery.toLowerCase()) &&
+      !(b.bid_id || "").toLowerCase().includes(searchQuery.toLowerCase())
     ) {
       return false;
     }
@@ -77,7 +88,7 @@ export default function OfficerDashboard() {
   });
 
   return (
-    <Shell>
+    <>
       {/* Top Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
         <div>
@@ -96,6 +107,13 @@ export default function OfficerDashboard() {
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate("/officer/tenders/create")}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-xs transition-all hover:scale-[1.02] flex items-center gap-2 cursor-pointer"
+          >
+            <span>+ Create Tender</span>
+          </button>
+
           <div className="text-xs text-slate font-mono flex items-center gap-2 bg-card border border-line px-3.5 py-2 rounded-xl shadow-xs">
             <span className="w-2 h-2 rounded-full bg-pass animate-pulse" />
             <span>Synced: {lastSync.toLocaleTimeString()}</span>
@@ -157,7 +175,32 @@ export default function OfficerDashboard() {
         </div>
       )}
 
+      {/* Tabs for Bids / Tenders */}
+      <div className="flex gap-3 mb-6 border-b border-line">
+        <button
+          onClick={() => setActiveTab("bids")}
+          className={`px-4 py-3 font-semibold text-sm border-b-2 transition-colors ${
+            activeTab === "bids"
+              ? "border-accent text-accent"
+              : "border-transparent text-slate hover:text-ink"
+          }`}
+        >
+          📋 Received Bids ({bids?.length || 0})
+        </button>
+        <button
+          onClick={() => setActiveTab("tenders")}
+          className={`px-4 py-3 font-semibold text-sm border-b-2 transition-colors ${
+            activeTab === "tenders"
+              ? "border-accent text-accent"
+              : "border-transparent text-slate hover:text-ink"
+          }`}
+        >
+          📢 Created Tenders ({tenders?.length || 0})
+        </button>
+      </div>
+
       {/* Main Table Card */}
+      {activeTab === "bids" ? (
       <div className="bg-card border border-line rounded-card overflow-hidden shadow-xs">
         {/* Table Filters Bar */}
         <div className="px-6 py-4 border-b border-line bg-canvas/40 flex flex-wrap items-center justify-between gap-4">
@@ -283,10 +326,31 @@ export default function OfficerDashboard() {
                           <StatusBadge status={b.decision} size="xs" />
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <span className="inline-flex items-center gap-1 font-semibold text-accent hover:text-accent2 text-xs">
-                            <span>Open</span>
-                            <ChevronRight className="w-3.5 h-3.5" />
-                          </span>
+                          <div className="flex items-center justify-end gap-3">
+                            <button
+                              onClick={() => navigate(`/officer/bids/${b.bid_id}`)}
+                              className="inline-flex items-center gap-1 font-semibold text-accent hover:text-accent2 text-xs transition-colors"
+                            >
+                              <span>Open</span>
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (window.confirm("Are you sure you want to remove this bid?")) {
+                                  try {
+                                    await api.removeBid(b.bid_id);
+                                    await load();
+                                  } catch (err) {
+                                    setError(err.message);
+                                  }
+                                }
+                              }}
+                              className="text-fail hover:text-fail/80 text-xs font-semibold transition-colors"
+                              title="Remove bid"
+                            >
+                              Remove
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -297,6 +361,81 @@ export default function OfficerDashboard() {
           </div>
         )}
       </div>
-    </Shell>
+      ) : (
+        /* Tenders Tab */
+        <div className="bg-card border border-line rounded-card overflow-hidden shadow-xs">
+          {!tenders && !error && (
+            <div className="px-6 py-16 text-center text-sm text-slate">
+              <div className="inline-block animate-spin mb-2">⚡</div>
+              <div>Loading tenders…</div>
+            </div>
+          )}
+          
+          {tenders && tenders.length === 0 && (
+            <div className="px-6 py-16 text-center">
+              <div className="text-4xl mb-3">📭</div>
+              <p className="text-slate font-medium">No tenders created yet</p>
+              <p className="text-slate text-sm mt-1">Create your first tender to get started</p>
+              <button
+                onClick={() => navigate("/officer/tenders/create")}
+                className="mt-4 bg-accent text-white font-semibold px-6 py-2 rounded-xl hover:bg-accent2 transition"
+              >
+                + Create Tender
+              </button>
+            </div>
+          )}
+
+          {tenders && tenders.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-canvas border-b border-line text-slate uppercase font-semibold text-[11px] tracking-wider">
+                  <tr>
+                    <th className="px-6 py-3.5">Tender Title</th>
+                    <th className="px-6 py-3.5">ID</th>
+                    <th className="px-6 py-3.5">Version</th>
+                    <th className="px-6 py-3.5">Status</th>
+                    <th className="px-6 py-3.5">Created</th>
+                    <th className="px-6 py-3.5 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {tenders.map((t) => (
+                    <tr key={t.id} className="hover:bg-canvas/70 cursor-pointer transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="font-bold text-ink text-sm">{t.title || "Untitled Tender"}</div>
+                      </td>
+                      <td className="px-6 py-4 font-mono text-[11px] text-slate">
+                        {t.id?.substring(0, 8)}
+                      </td>
+                      <td className="px-6 py-4 font-mono text-[11px] text-slate">
+                        {t.version_number || "1.0"}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full inline-block ${
+                          t.status === "published" 
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-amber-100 text-amber-700"
+                        }`}>
+                          {t.status === "published" ? "Published" : "Draft"}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-slate text-[11px]">
+                        {t.created_at ? new Date(t.created_at).toLocaleDateString() : "—"}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <span className="inline-flex items-center gap-1 font-semibold text-accent hover:text-accent2 text-xs">
+                          <span>View</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </>
   );
 }
