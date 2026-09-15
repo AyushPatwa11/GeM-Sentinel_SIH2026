@@ -143,27 +143,17 @@ def get_user_from_request(request: Request) -> dict:
 # Startup
 @app.on_event("startup")
 async def startup_event():
-    """Run migrations and seed demo data on startup."""
-    from app.db.base import SessionLocal
-    import subprocess
-    import os
+    """Create database tables and seed demo data on startup."""
+    from app.db.base import SessionLocal, engine
+    from app.models.models import Base
     
     try:
-        # Run migrations first
-        logger.info("Running database migrations...")
-        result = subprocess.run(
-            ["alembic", "upgrade", "head"],
-            cwd=os.path.dirname(os.path.dirname(__file__)),
-            capture_output=True,
-            text=True,
-            timeout=60
-        )
-        if result.returncode == 0:
-            logger.info("Migrations completed successfully")
-        else:
-            logger.warning(f"Migration warning: {result.stderr}")
+        # Create all tables from models
+        logger.info("Creating database tables...")
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created successfully")
     except Exception as e:
-        logger.warning(f"Could not run migrations: {str(e)}")
+        logger.warning(f"Could not create tables: {str(e)}")
     
     # Then seed demo data
     db = SessionLocal()
