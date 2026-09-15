@@ -143,11 +143,17 @@ def get_user_from_request(request: Request) -> dict:
 # Startup
 @app.on_event("startup")
 async def startup_event():
-    """Seed demo data on startup."""
+    """Seed demo data on startup if database is available."""
     from app.db.base import SessionLocal
     db = SessionLocal()
     try:
-        seed_demo_data(db)
+        # Try to seed data, but don't fail if database is unavailable
+        try:
+            seed_demo_data(db)
+            logger.info("Demo data seeded successfully")
+        except Exception as e:
+            logger.warning(f"Could not seed demo data: {str(e)}")
+            # Don't fail startup if seeding fails
     finally:
         db.close()
 
