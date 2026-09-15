@@ -1,4 +1,5 @@
-const BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000/api";
+const BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
+console.log("[GeM Sentinel] API base URL:", BASE);
 
 async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
