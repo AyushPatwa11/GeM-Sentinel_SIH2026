@@ -62,7 +62,8 @@ old_*.md
 *_PHASE_*.md
 *_WAVE_*.md
 
-# Video/Media files
+# Video/Media files (except essential hero videos)
 *.mp4
 *.avi
 *.mov
+!frontend/public/landing-demo.mp4
