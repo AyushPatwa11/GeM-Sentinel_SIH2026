@@ -143,7 +143,7 @@ def get_user_from_request(request: Request) -> dict:
 # Startup
 @app.on_event("startup")
 async def startup_event():
-    """Create database tables and seed demo data on startup."""
+    """Create database tables on startup (skip seeding for now)."""
     from app.db.base import SessionLocal, engine
     from app.models.models import Base
     
@@ -155,16 +155,8 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"Could not create tables: {str(e)}")
     
-    # Then seed demo data
-    db = SessionLocal()
-    try:
-        try:
-            seed_demo_data(db)
-            logger.info("Demo data seeded successfully")
-        except Exception as e:
-            logger.warning(f"Could not seed demo data: {str(e)}")
-    finally:
-        db.close()
+    # Skip seeding for now - it uses too much memory on free tier
+    logger.info("Application startup complete")
 
 # ============================================================================
 # HEALTH & INFO
