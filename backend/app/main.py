@@ -146,14 +146,22 @@ async def startup_event():
     """Create database tables on startup (skip seeding for now)."""
     from app.db.base import SessionLocal, engine
     from app.models.models import Base
+    import sqlalchemy
     
     try:
-        # Create all tables from models
-        logger.info("Creating database tables...")
+        # Create all tables from models if they don't exist
+        # This is safe for multi-worker deployments
+        logger.info("Ensuring database tables exist...")
         Base.metadata.create_all(bind=engine)
-        logger.info("Database tables created successfully")
+        logger.info("Database tables ready")
+    except sqlalchemy.exc.ProgrammingError as e:
+        # This can happen in multi-worker scenarios - tables already created
+        if "already exists" in str(e) or "duplicate key" in str(e):
+            logger.info("Tables already exist (multi-worker creation race)")
+        else:
+            logger.warning(f"Database error: {str(e)}")
     except Exception as e:
-        logger.warning(f"Could not create tables: {str(e)}")
+        logger.warning(f"Could not ensure tables: {str(e)}")
     
     # Skip seeding for now - it uses too much memory on free tier
     logger.info("Application startup complete")
