@@ -9,8 +9,17 @@ export function AuthProvider({ children }) {
   });
 
   const login = (data) => {
-    setSession(data);
-    sessionStorage.setItem("gem-sentinel-session", JSON.stringify(data));
+    // Store the full response including role
+    setSession({
+      ...data,
+      role: data.role,
+      user_id: data.user_id,
+    });
+    sessionStorage.setItem("gem-sentinel-session", JSON.stringify({
+      ...data,
+      role: data.role,
+      user_id: data.user_id,
+    }));
   };
 
   const logout = () => {

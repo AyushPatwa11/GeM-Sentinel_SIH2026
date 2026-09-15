@@ -7,32 +7,34 @@ html {
 }
 
 body {
-  @apply bg-canvas text-ink font-body antialiased;
+  @apply bg-govLight text-govDark font-body antialiased;
 }
 
 ::selection {
-  background: #2F5DE833;
-  color: #0B1A33;
+  background: #0052CC33;
+  color: #000000;
 }
 
 /* Custom Animation Utilities */
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0px);
+
+/* Subtle entrance animations for government portal feel */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
   }
-  50% {
-    transform: translateY(-8px);
+  to {
+    opacity: 1;
   }
 }
 
-@keyframes pulseGlow {
-  0%, 100% {
-    opacity: 0.4;
-    transform: scale(1);
+@keyframes slideInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
   }
-  50% {
-    opacity: 0.8;
-    transform: scale(1.05);
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -42,10 +44,11 @@ body {
   }
 }
 
-.animate-float {
-  animation: float 5s ease-in-out infinite;
+.animate-fade-in {
+  animation: fadeIn 500ms ease-in-out;
 }
 
-.animate-pulse-glow {
-  animation: pulseGlow 6s ease-in-out infinite;
+.animate-slide-in-down {
+  animation: slideInDown 300ms ease-in-out;
 }
+

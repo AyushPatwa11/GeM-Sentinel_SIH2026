@@ -19,23 +19,23 @@ export default function Shell({ children }) {
       ];
 
   return (
-    <div className="min-h-screen flex bg-canvas font-body text-ink antialiased selection:bg-accent/20">
-      {/* Sidebar */}
-      <aside className="w-64 shrink-0 bg-ink text-white flex flex-col justify-between border-r border-white/10 select-none">
+    <div className="min-h-screen flex bg-gray-50 font-body text-gray-900 antialiased">
+      {/* Sidebar - Compact */}
+      <aside className="w-56 shrink-0 bg-slate-900 text-white flex flex-col justify-between border-r border-slate-800 select-none">
         <div>
-          {/* Logo Brand Header */}
-          <div className="px-6 py-6 flex items-center gap-3 border-b border-white/10">
-            <div className="w-9 h-9 rounded-xl bg-accent flex items-center justify-center shrink-0 shadow-md shadow-accent/30">
-              <ShieldCheck className="w-5 h-5 text-white" />
+          {/* Logo Brand Header - Compact */}
+          <div className="px-4 py-4 flex items-center gap-2.5 border-b border-slate-800">
+            <div className="w-8 h-8 rounded-lg bg-blue-500 flex items-center justify-center shrink-0 shadow-md">
+              <ShieldCheck className="w-4 h-4 text-white" />
             </div>
             <div>
-              <div className="font-display font-bold text-base tracking-tight leading-tight">GeM Sentinel</div>
-              <div className="text-[11px] text-white/50 font-medium">Procurement Verification</div>
+              <div className="font-bold text-sm tracking-tight leading-tight">GeM Sentinel</div>
+              <div className="text-[10px] text-slate-400 font-medium">Bid Verification</div>
             </div>
           </div>
 
           {/* Navigation Links */}
-          <nav className="px-3 py-5 space-y-1.5">
+          <nav className="px-2 py-4 space-y-1">
             {links.map((l) => {
               const Icon = l.icon;
               return (
@@ -43,32 +43,26 @@ export default function Shell({ children }) {
                   key={l.to}
                   to={l.to}
                   end={l.to === "/officer" || l.to === "/bidder"}
-                  className={({ isActive }) =>
-                    `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                      isActive
-                        ? "bg-accent text-white shadow-sm shadow-accent/30 font-semibold"
-                        : "text-white/70 hover:bg-white/5 hover:text-white"
-                    }`
-                  }
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all text-slate-300 hover:bg-slate-800 hover:text-white"
                 >
                   <Icon className="w-4 h-4 shrink-0" />
-                  <span>{l.label}</span>
+                  <span className="truncate">{l.label}</span>
                 </NavLink>
               );
             })}
           </nav>
         </div>
 
-        {/* User Session Footer */}
-        <div className="p-4 m-3 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm">
-          <div className="text-[10px] uppercase font-mono font-semibold text-white/40 tracking-wider">
-            {isOfficer ? "Procurement Officer" : "Bidder Account"}
+        {/* User Session Footer - Compact */}
+        <div className="p-3 m-2 rounded-lg bg-slate-800 border border-slate-700">
+          <div className="text-[9px] uppercase font-mono font-semibold text-slate-400 tracking-wider">
+            {isOfficer ? "Officer" : "Bidder"}
           </div>
-          <div className="text-sm font-bold text-white truncate mt-0.5">
-            {session?.name || (isOfficer ? "Officer Sharma" : "Bidder Portal")}
+          <div className="text-xs font-bold text-white truncate mt-1">
+            {session?.name || (isOfficer ? "Officer Sharma" : "Bidder")}
           </div>
-          <div className="text-[11px] text-white/50 truncate font-mono mt-0.5">
-            {session?.email || (isOfficer ? "po.sharma@gem.gov.in" : "bidder@gem.gov.in")}
+          <div className="text-[10px] text-slate-400 truncate font-mono mt-0.5">
+            {session?.email || (isOfficer ? "officer@gem.gov.in" : "bidder@gem.gov.in")}
           </div>
 
           <button
@@ -76,17 +70,17 @@ export default function Shell({ children }) {
               logout();
               navigate("/login");
             }}
-            className="w-full mt-3 flex items-center justify-center gap-2 text-xs font-medium text-white/70 hover:text-white bg-white/5 hover:bg-white/10 py-1.5 rounded-lg border border-white/10 transition-colors"
+            className="w-full mt-2 flex items-center justify-center gap-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-700 hover:bg-slate-600 py-1.5 rounded transition-colors"
           >
             <LogOut className="w-3.5 h-3.5" />
-            <span>Sign Out</span>
+            <span>Logout</span>
           </button>
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <main className="flex-1 min-w-0 flex flex-col">
-        <div className="max-w-7xl w-full mx-auto px-6 lg:px-10 py-8">{children}</div>
+      {/* Main Content Area - Full Width */}
+      <main className="flex-1 min-w-0 flex flex-col bg-white">
+        <div className="w-full px-6 lg:px-8 py-6 overflow-auto">{children}</div>
       </main>
     </div>
   );
