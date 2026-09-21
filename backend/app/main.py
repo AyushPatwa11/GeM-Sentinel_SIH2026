@@ -217,10 +217,13 @@ def serialize_tender_response(t: Tender, db: Session) -> TenderResponse:
 # Startup
 @app.on_event("startup")
 async def startup_event():
-    """Seed demo data on startup."""
-    from app.db.base import SessionLocal
-    db = SessionLocal()
+    """Create database tables on startup (skip seeding for now)."""
+    from app.db.base import SessionLocal, engine
+    from app.models.models import Base
+    import sqlalchemy
+    
     try:
+<<<<<<< HEAD
         Base.metadata.create_all(bind=engine)
         seed_demo_data(db)
     except SQLAlchemyError as exc:
@@ -231,6 +234,24 @@ async def startup_event():
         )
     finally:
         db.close()
+=======
+        # Create all tables from models if they don't exist
+        # This is safe for multi-worker deployments
+        logger.info("Ensuring database tables exist...")
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables ready")
+    except sqlalchemy.exc.ProgrammingError as e:
+        # This can happen in multi-worker scenarios - tables already created
+        if "already exists" in str(e) or "duplicate key" in str(e):
+            logger.info("Tables already exist (multi-worker creation race)")
+        else:
+            logger.warning(f"Database error: {str(e)}")
+    except Exception as e:
+        logger.warning(f"Could not ensure tables: {str(e)}")
+    
+    # Skip seeding for now - it uses too much memory on free tier
+    logger.info("Application startup complete")
+>>>>>>> 253af92bbffbde143648eba039fcaa194209f1e5
 
 # ============================================================================
 # HEALTH & INFO
