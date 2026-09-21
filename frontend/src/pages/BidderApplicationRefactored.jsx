@@ -109,7 +109,7 @@ export default function BidderApplicationRefactored() {
     setError("");
 
     try {
-      const uploadedDoc = await api.bidderUploadDocument(bidId, file);
+      const uploadedDoc = await api.bidderUploadDocument(bidId, file, docType);
       setUploadedDocuments((prev) => ({
         ...prev,
         [docType]: uploadedDoc,

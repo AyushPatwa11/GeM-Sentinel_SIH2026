@@ -147,7 +147,7 @@ class DocumentClassifier:
         scores = {}
         
         for doc_type, patterns in DocumentClassifier.DOC_TYPE_PATTERNS.items():
-            matches = sum(1 for p in patterns if re.search(p, text_lower))
+            matches = sum(1 for p in patterns if re.search(p, text, re.IGNORECASE))
             confidence = min(1.0, matches * 0.3)  # 0.3 per pattern match
             scores[doc_type] = confidence
         
@@ -297,16 +297,12 @@ class OCRProcessor:
         if not text:
             return ""
         
-        # Remove extra whitespace
-        text = re.sub(r'\s+', ' ', text)
-        
-        # Normalize line breaks
-        text = re.sub(r'[\r\n]+', '\n', text)
-        
         # Remove common OCR artifacts
         text = re.sub(r'[|]{2,}', '', text)
         text = re.sub(r'[_]{3,}', '', text)
-        
+
+        # Normalize all whitespace after removing artifacts.
+        text = re.sub(r'\s+', ' ', text)
         return text.strip()
     
     @staticmethod

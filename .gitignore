@@ -62,7 +62,10 @@ old_*.md
 *_PHASE_*.md
 *_WAVE_*.md
 
-# Video/Media files
-*.mp4
-*.avi
-*.mov
+# Database & Uploads
+*.db
+*.sqlite
+*.sqlite3
+backend/gem_sentinel_demo.db
+backend/uploads/
+uploads/

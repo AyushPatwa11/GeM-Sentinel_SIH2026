@@ -48,6 +48,7 @@ class TenderService:
             title=title,
             description=description,
             deadline=deadline,
+            required_documents=required_documents or [],
             created_by=created_by_id_uuid,
             organization_id=organization_id_uuid,
             status="draft",
@@ -286,17 +287,21 @@ class TenderService:
         
         latest_version = TenderService.get_latest_tender_version(db, tender_id)
         
+        deadline_iso = tender.deadline.isoformat() if tender.deadline else None
         return {
             "id": str(tender.id),
             "title": tender.title,
+            "description": tender.description or "",
             "status": tender.status,
             "created_by": str(tender.created_by),
             "organization_id": str(tender.organization_id),
             "created_at": tender.created_at.isoformat() if tender.created_at else None,
             "published_at": latest_version.published_at.isoformat() if latest_version and latest_version.published_at else None,
             "version_number": latest_version.version_number if latest_version else "1.0",
-            "required_documents": getattr(latest_version, "required_documents", []) if latest_version else [],
-            "clause_count": len(tender.versions[0].clauses) if tender.versions and tender.versions[0].clauses else 0,
+            "deadline": deadline_iso,
+            "bid_submission_end_date": deadline_iso,
+            "required_documents": tender.required_documents or [],
+            "clause_count": len(tender.versions[0].clauses) if tender.versions and tender.versions[0].clauses else len(tender.required_documents or []),
         }
     
     @staticmethod

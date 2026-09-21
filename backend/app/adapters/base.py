@@ -26,6 +26,7 @@ class VerificationStatus(str, Enum):
     ERROR = "ERROR"                    # Technical error (auth, malformed response)
     INCONCLUSIVE = "INCONCLUSIVE"      # No record found in authority
     PENDING = "PENDING"                # Verification not yet attempted
+    NOT_REQUIRED = "NOT_REQUIRED"      # The authority check does not apply
 
 
 @dataclass

@@ -109,13 +109,23 @@ export default function BidderTenders() {
 
   async function loadData() {
     try {
-      const [tList, bList] = await Promise.all([
+      // Load tenders and bids independently so a bids auth error
+      // does not prevent tenders from being displayed
+      const [tResult, bResult] = await Promise.allSettled([
         api.bidderTenders(),
         api.bidderBids(),
       ]);
-      setTenders(tList || []);
-      setMyBids(bList || []);
-      setError("");
+
+      if (tResult.status === "fulfilled") {
+        setTenders(tResult.value || []);
+      } else {
+        setError(tResult.reason?.message || "Failed to load tenders");
+      }
+
+      if (bResult.status === "fulfilled") {
+        setMyBids(bResult.value || []);
+      }
+      // Silently ignore bids auth error — user may not have any bids
     } catch (err) {
       setError(err.message || "Failed to load data");
     } finally {

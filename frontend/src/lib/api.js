@@ -1,4 +1,4 @@
-const BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
+const BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8001/api";
 console.log("[GeM Sentinel] API base URL:", BASE);
 
 function getAuthHeader() {
@@ -27,7 +27,13 @@ async function request(path, options = {}) {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `Request failed: ${res.status}`);
+    const detail = Array.isArray(body.detail)
+      ? body.detail.map((item) => {
+          const location = Array.isArray(item.loc) ? item.loc.join(".") : "";
+          return `${location ? `${location}: ` : ""}${item.msg || JSON.stringify(item)}`;
+        }).join("; ")
+      : body.detail;
+    throw new Error(detail || `Request failed: ${res.status}`);
   }
   return res.json();
 }
@@ -197,10 +203,19 @@ export const api = {
       body: form ? JSON.stringify(form) : undefined,
     }),
   bidderDocuments: (bidId) => request(`/bidder/bids/${bidId}/documents/list`),
-  bidderUploadDocument: (bidId, file) =>
-    uploadSingle(`/bidder/bids/${bidId}/documents/upload`, file),
-  bidderUploadDocuments: (bidId, files) => 
-    upload(`/bidder/bids/${bidId}/documents/upload`, files),
+  bidderUploadDocument: (bidId, file, docType = "OTHER") =>
+    uploadSingle(
+      `/bidder/bids/${bidId}/documents/upload?doc_type=${encodeURIComponent(docType)}`,
+      file
+    ),
+  bidderUploadDocuments: async (bidId, files, docTypes = []) => {
+    const uploads = await Promise.all(
+      files.map((file, index) =>
+        api.bidderUploadDocument(bidId, file, docTypes[index] || "OTHER")
+      )
+    );
+    return uploads;
+  },
   bidderDeleteDocument: (bidId, docId) =>
     request(`/bidder/bids/${bidId}/documents/${docId}`, { method: "DELETE" }),
   getOCRStatus: (docId) =>

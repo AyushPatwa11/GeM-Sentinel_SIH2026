@@ -8,6 +8,7 @@ import uuid
 import hashlib
 import mimetypes
 import os
+from pathlib import Path
 
 
 class DocumentService:
@@ -21,6 +22,7 @@ class DocumentService:
         'image/png',
     }
     MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+    UPLOAD_ROOT = Path(os.getenv("UPLOAD_ROOT", Path(__file__).resolve().parents[2] / "uploads"))
     
     # Magic bytes for file type validation (file signatures)
     MAGIC_BYTES = {
@@ -84,6 +86,29 @@ class DocumentService:
             Hex-encoded SHA256 hash
         """
         return hashlib.sha256(file_bytes).hexdigest()
+
+    @staticmethod
+    def store_upload(file_bytes: bytes, bid_id: str, doc_type: str, filename: str) -> str:
+        """Store validated bytes below the configured private upload root.
+
+        The returned path is an application-relative path, not a user-controlled
+        filesystem path. The original filename is used only to preserve a safe
+        extension; document identifiers provide the storage name.
+        """
+        extension = Path(filename).suffix.lower()
+        if extension not in DocumentService.ALLOWED_FILE_EXTENSIONS:
+            raise ValidationException(f"Unsupported file extension: {extension}")
+
+        safe_doc_type = "".join(
+            character if character.isalnum() or character in {"-", "_"} else "_"
+            for character in doc_type
+        ).strip("_") or "OTHER"
+        bid_directory = DocumentService.UPLOAD_ROOT / "bids" / str(uuid.UUID(str(bid_id)))
+        bid_directory.mkdir(parents=True, exist_ok=True)
+        stored_name = f"{safe_doc_type}_{uuid.uuid4().hex}{extension}"
+        destination = bid_directory / stored_name
+        destination.write_bytes(file_bytes)
+        return str(destination.relative_to(DocumentService.UPLOAD_ROOT))
     
     @staticmethod
     def create_document(

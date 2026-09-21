@@ -6,8 +6,8 @@ import { Lock, Mail } from "lucide-react";
 
 export default function Login() {
   const [role, setRole] = useState("officer");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("demo");
+  const [email, setEmail] = useState("officer@gem.gov");
+  const [password, setPassword] = useState("officer123");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const { login } = useAuth();
@@ -18,7 +18,7 @@ export default function Login() {
     setLoading(true);
     setError("");
     try {
-      const data = await api.login(email || `${role}@gem.gov.in`, password);
+      const data = await api.login(email, password);
       login(data);
       const userRole = data.role || role;
       navigate(userRole === "officer" ? "/officer" : "/bidder");
@@ -62,7 +62,11 @@ export default function Login() {
               <button
                 key={r.value}
                 type="button"
-                onClick={() => setRole(r.value)}
+                onClick={() => {
+                  setRole(r.value);
+                  setEmail(r.value === "officer" ? "officer@gem.gov" : "abc@bidder.com");
+                  setPassword(r.value === "officer" ? "officer123" : "password123");
+                }}
                 className={`flex-1 py-3 px-4 rounded-xl font-semibold text-sm transition-all duration-300 transform ${
                   role === r.value
                     ? "bg-white text-blue-900 shadow-lg scale-105"
@@ -83,7 +87,7 @@ export default function Login() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder={role === "officer" ? "officer@gem.gov.in" : "bidder@gem.gov.in"}
+                placeholder={role === "officer" ? "officer@gem.gov" : "abc@bidder.com"}
                 className="w-full pl-12 pr-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/40 focus:border-transparent transition-all backdrop-blur-sm"
               />
             </div>

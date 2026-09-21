@@ -19,7 +19,7 @@ import os
 import logging
 from typing import Dict, Optional
 
-from app.adapters.base import PortalAdapter
+from app.adapters.base import AdapterError, PortalAdapter, VerificationClaim
 from app.adapters.datagovin_client import DataGovInMCAAdapter
 from app.adapters.mock_adapters import (
     BlacklistMockAdapter,
@@ -30,6 +30,19 @@ from app.adapters.mock_adapters import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class UnavailableAdapter(PortalAdapter):
+    """Explicit provider boundary for modes that are not configured."""
+
+    def __init__(self, source_name: str, mode: str, reason: str):
+        self.source_name = source_name
+        self.integration_mode = mode
+        self.unavailable_reason = reason
+        self.enabled = False
+
+    async def _verify_raw(self, claim: VerificationClaim):
+        raise AdapterError(self.unavailable_reason)
 
 # field_name -> authoritative source name
 CLAIM_AUTHORITY_MAP = {
@@ -125,7 +138,9 @@ class RegistryManager:
         
         # Initialize non-credential-gated adapters
         self._adapter_registry["DIGILOCKER"] = DigiLockerMockAdapter()
+        self._adapter_registry["DIGILOCKER"].integration_mode = "MOCK"
         self._adapter_registry["BLACKLIST"] = BlacklistMockAdapter()
+        self._adapter_registry["BLACKLIST"].integration_mode = "MOCK"
         
         logger.info("Adapter registry initialized")
         self._log_adapter_status()
@@ -145,24 +160,57 @@ class RegistryManager:
         • If env var is not set → use Mock_Adapter (fallback)
         """
         
+        configured_mode = os.getenv("VERIFICATION_ADAPTER_MODE", "MOCK").strip().upper()
+        if configured_mode not in {"LIVE", "SANDBOX", "MOCK", "UNAVAILABLE"}:
+            raise ValueError(
+                "VERIFICATION_ADAPTER_MODE must be one of LIVE, SANDBOX, MOCK, or UNAVAILABLE"
+            )
+
+        if configured_mode == "UNAVAILABLE":
+            return UnavailableAdapter(
+                source_name,
+                configured_mode,
+                "Provider explicitly disabled by VERIFICATION_ADAPTER_MODE",
+            )
+
+        if configured_mode in {"SANDBOX", "LIVE"} and not os.getenv(env_var_name):
+            return UnavailableAdapter(
+                source_name,
+                configured_mode,
+                f"{configured_mode} provider is unavailable: {env_var_name} is not configured",
+            )
+
+        if configured_mode == "MOCK":
+            mock_adapter_instance.integration_mode = "MOCK"
+            mock_adapter_instance.status_note = "Synthetic fixture data; not an authority response"
+            return mock_adapter_instance
+
         if os.getenv(env_var_name):
             if real_adapter_class:
                 try:
                     adapter = real_adapter_class()
                     logger.info(f"[{source_name:8s}] ENABLED (Real adapter, credential found)")
+                    adapter.integration_mode = "LIVE"
                     return adapter
                 except Exception as e:
-                    logger.warning(f"[{source_name:8s}] Failed to init Real adapter: {e}, using Mock")
-                    return mock_adapter_instance
+                    logger.error(f"[{source_name:8s}] Failed to init Real adapter: {e}")
+                    return UnavailableAdapter(
+                        source_name,
+                        configured_mode,
+                        f"Live provider initialization failed: {e}",
+                    )
             else:
-                logger.warning(f"[{source_name:8s}] Real adapter class not available, using Mock")
-                return mock_adapter_instance
+                return UnavailableAdapter(
+                    source_name,
+                    configured_mode,
+                    "Live provider implementation is not installed",
+                )
         else:
-            logger.info(f"[{source_name:8s}] DISABLED (using Mock adapter, credential not found)")
-            # Mark mock as fallback if it has enabled flag
-            if hasattr(mock_adapter_instance, 'enabled'):
-                mock_adapter_instance.enabled = True
-            return mock_adapter_instance
+            return UnavailableAdapter(
+                source_name,
+                configured_mode,
+                f"{configured_mode} provider is unavailable: {env_var_name} is not configured",
+            )
     
     @staticmethod
     def _log_adapter_status():

@@ -1,5 +1,5 @@
 """Common request/response schemas for Phase 2+."""
-from typing import Optional, List
+from typing import Optional, List, Union, Dict, Any
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -14,7 +14,7 @@ class TenderCreateRequest(BaseModel):
     description: Optional[str] = ""
     deadline: datetime
     version_number: Optional[str] = "1.0"
-    required_documents: Optional[List[str]] = []
+    required_documents: Optional[List[Union[str, Dict[str, Any]]]] = []
     source_document_path: Optional[str] = None
 
 
@@ -22,13 +22,17 @@ class TenderResponse(BaseModel):
     """Tender response with details."""
     id: str
     title: str
+    description: Optional[str] = ""
     status: str
     created_by: str
     organization_id: str
-    version_number: str
+    organization_name: Optional[str] = "Government of India"
+    version_number: Optional[str] = "1.0"
     published_at: Optional[str] = None
-    created_at: str
-    required_documents: List[str] = []
+    created_at: Optional[str] = None
+    deadline: Optional[str] = None
+    bid_submission_end_date: Optional[str] = None
+    required_documents: List[Union[str, dict]] = []
     clause_count: int = 0
     
     class Config:
@@ -52,13 +56,16 @@ class BidCreateRequest(BaseModel):
 class BidResponse(BaseModel):
     """Bid response with details."""
     id: str
-    tender_id: str
-    tender_version_id: str
-    bidder_org_id: str
-    status: str
-    current_state: str
+    tender_id: Optional[str] = None
+    tender_version_id: Optional[str] = None
+    bidder_org_id: Optional[str] = None
+    status: Optional[str] = "DRAFT"
+    current_state: Optional[str] = "DRAFT"
+    compliance_status: Optional[str] = "PENDING"
+    risk_level: Optional[str] = "LOW"
     submitted_at: Optional[str] = None
-    created_at: str
+    created_at: Optional[str] = None
+    tender: Optional[Dict[str, Any]] = None
     
     class Config:
         from_attributes = True

@@ -17,7 +17,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy import JSON
 from sqlalchemy.types import Text
 import json
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, synonym
 
 from app.db.base import Base
 
@@ -250,10 +250,7 @@ class ComplianceResult(Base):
         CheckConstraint("explanation IN ('PASS','FAIL','WAIVED','REVIEW','NOT_EVALUATED')"),
     )
     
-    @property
-    def status(self):
-        """Backward compatibility property."""
-        return self.explanation
+    status = synonym("explanation")
 
 
 class RiskSignal(Base):
@@ -271,7 +268,7 @@ class RiskSignal(Base):
     )
     compliance_result_id = Column(UUID(as_uuid=True), ForeignKey("compliance_results.id"))
 
-    policy_version = Column(Text, nullable=False)
+    policy_version = Column(Text, nullable=False, default="1.0")
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
 

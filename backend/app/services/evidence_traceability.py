@@ -74,8 +74,9 @@ class EvidenceTraceability:
         
         for fact_id in fact_ids:
             try:
+                fact_id_value = uuid.UUID(fact_id)
                 fact = db.query(ExtractedFact).filter(
-                    ExtractedFact.id == fact_id
+                    ExtractedFact.id == fact_id_value
                 ).first()
                 
                 if fact:
@@ -390,8 +391,9 @@ class EvidenceTraceability:
         
         for ref in evidence_refs:
             try:
+                fact_ref = uuid.UUID(ref)
                 fact = db.query(ExtractedFact).filter(
-                    ExtractedFact.id == ref
+                    ExtractedFact.id == fact_ref
                 ).first()
                 
                 if fact and (fact_id_uuid is None or str(fact.id) == str(fact_id_uuid)):

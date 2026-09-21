@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 from app.models.models import OCRJob, Document, AuditEvent
 import uuid
 import hashlib
-import json
 import re
 
 
@@ -44,92 +43,34 @@ class OCRService:
         if not job:
             raise ValueError(f"OCR Job {job_id} not found")
         
-        try:
-            # Update job status to PROCESSING
-            job.status = "PROCESSING"
-            db.flush()
-            
-            # Placeholder: Mock OCR text extraction
-            # In production, integrate with Tesseract, AWS Textract, or similar
-            extracted_text = OCRService._mock_ocr_extract(file_bytes)
-            
-            # Extract entities from text
-            entities = OCRService._extract_entities(extracted_text)
-            
-            # Update job with results
-            job.status = "COMPLETED"
-            job.extracted_text = extracted_text
-            job.extracted_entities = entities
-            job.completed_at = __import__('datetime').datetime.utcnow()
-            
-            db.flush()
-            
-            # Log audit event
-            OCRService._log_audit_event(
-                db,
-                "OCR_JOB_COMPLETED",
-                str(job.document_id),
-                job.requested_by,
-                {
-                    "job_id": str(job_id_uuid),
-                    "entity_count": len(entities),
-                    "text_length": len(extracted_text),
-                },
-            )
-            db.commit()
-            
-            return {
+        # This compatibility method does not have the stored document path
+        # required by a binary OCR provider. Never manufacture extracted text.
+        job.status = "FAILED"
+        job.error_message = (
+            "Binary OCR requires a configured provider and the stored document "
+            "path. Process supplied OCR text through the text-processing endpoint."
+        )
+        document = db.query(Document).filter(Document.id == job.document_id).first()
+        if document:
+            document.ocr_status = "UNSUPPORTED"
+
+        OCRService._log_audit_event(
+            db,
+            "OCR_JOB_FAILED",
+            str(job.document_id),
+            job.requested_by,
+            {
                 "job_id": str(job_id_uuid),
-                "status": "COMPLETED",
-                "extracted_text": extracted_text,
-                "entities": entities,
-            }
-            
-        except Exception as e:
-            # Mark job as failed
-            job.status = "FAILED"
-            job.error_message = str(e)
-            
-            db.flush()
-            
-            # Log failure event
-            OCRService._log_audit_event(
-                db,
-                "OCR_JOB_FAILED",
-                str(job.document_id),
-                job.requested_by,
-                {
-                    "job_id": str(job_id_uuid),
-                    "error": str(e),
-                },
-            )
-            db.commit()
-            
-            raise
-    
-    @staticmethod
-    def _mock_ocr_extract(file_bytes: bytes) -> str:
-        """Mock OCR text extraction (placeholder for Tesseract/AWS Textract).
-        
-        Args:
-            file_bytes: Raw file bytes
-            
-        Returns:
-            Extracted text
-        """
-        # Placeholder: Return mock extracted text
-        # In production, this would call an actual OCR engine
-        return """
-        GSTIN: 27AAPPL1234L1Z5
-        PAN: AAAPP1234K
-        Company Name: Test Company Ltd
-        Address: 123 Test Street, Mumbai, Maharashtra
-        Email: info@testcompany.com
-        Phone: 9876543210
-        Date of Registration: 15-03-2020
-        Authorized Representative: Mr. John Doe
-        Signature present: Yes
-        """
+                "error": job.error_message,
+            },
+        )
+        db.commit()
+
+        return {
+            "job_id": str(job_id_uuid),
+            "status": "FAILED",
+            "error": job.error_message,
+        }
     
     @staticmethod
     def _extract_entities(text: str) -> Dict[str, List[str]]:

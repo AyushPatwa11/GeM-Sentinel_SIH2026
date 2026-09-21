@@ -3,6 +3,7 @@ from fastapi import FastAPI, Depends, HTTPException, File, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import hashlib
@@ -13,9 +14,9 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-from app.db.base import get_db
+from app.db.base import Base, engine, get_db
 from app.models.models import (
-    User, Tender, TenderVersion, Bid, Document, AuditEvent,
+    User, Tender, TenderVersion, Bid, Document, AuditEvent, Organization,
     BidState, DocumentVersion, OCRJob, ClarificationRequest, 
     ClarificationResponse, OfficerDecision, Notification,
     ComplianceResult, RiskAssessment, ExtractedFact, RiskSignal
@@ -140,6 +141,79 @@ def get_user_from_request(request: Request) -> dict:
     
     raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
 
+
+def get_tender_requirements(tender: Optional[Tender]) -> List[dict]:
+    """Normalize persisted tender document requirements for API consumers."""
+    if not tender or not tender.required_documents:
+        return []
+
+    requirements = []
+    for index, requirement in enumerate(tender.required_documents):
+        if isinstance(requirement, str):
+            requirements.append({
+                "id": requirement,
+                "doc_type": requirement,
+                "title": requirement.replace("_", " ").title(),
+                "description": "",
+                "mandatory": True,
+                "position": index,
+            })
+        elif isinstance(requirement, dict):
+            doc_type = requirement.get("doc_type") or requirement.get("type") or requirement.get("id")
+            if doc_type:
+                requirements.append({
+                    **requirement,
+                    "id": requirement.get("id", doc_type),
+                    "doc_type": doc_type,
+                    "title": requirement.get("title") or str(doc_type).replace("_", " ").title(),
+                    "description": requirement.get("description", ""),
+                    "mandatory": requirement.get("mandatory", True),
+                    "position": index,
+                })
+    return requirements
+
+
+def serialize_tender_response(t: Tender, db: Session) -> TenderResponse:
+    """Helper to serialize a Tender model into TenderResponse schema safely."""
+    latest_version = (
+        db.query(TenderVersion)
+        .filter(TenderVersion.tender_id == t.id)
+        .order_by(TenderVersion.version_number.desc())
+        .first()
+    )
+    version_num = latest_version.version_number if latest_version else "1.0"
+    pub_at = latest_version.published_at.isoformat() if latest_version and latest_version.published_at else None
+    deadline_iso = t.deadline.isoformat() if t.deadline else None
+
+    org_name = "Government of India"
+    if t.organization_id:
+        try:
+            org_id_uuid = uuid.UUID(str(t.organization_id)) if isinstance(t.organization_id, (str, uuid.UUID)) else t.organization_id
+            org = db.query(Organization).filter(Organization.id == org_id_uuid).first()
+            if org and org.legal_name:
+                org_name = org.legal_name
+        except Exception:
+            pass
+
+    req_docs = t.required_documents or []
+    return TenderResponse(
+        id=str(t.id),
+        title=t.title,
+        description=t.description or "",
+        status=t.status,
+        created_by=str(t.created_by),
+        organization_id=str(t.organization_id),
+        organization_name=org_name,
+        version_number=version_num,
+        published_at=pub_at,
+        created_at=t.created_at.isoformat() if t.created_at else None,
+        deadline=deadline_iso,
+        bid_submission_end_date=deadline_iso,
+        required_documents=req_docs,
+        clause_count=len(req_docs),
+    )
+
+
 # Startup
 @app.on_event("startup")
 async def startup_event():
@@ -147,7 +221,14 @@ async def startup_event():
     from app.db.base import SessionLocal
     db = SessionLocal()
     try:
+        Base.metadata.create_all(bind=engine)
         seed_demo_data(db)
+    except SQLAlchemyError as exc:
+        logger.error(
+            "Database unavailable during startup seeding; API will start in "
+            "degraded mode: %s",
+            exc,
+        )
     finally:
         db.close()
 
@@ -190,7 +271,14 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
         Body: {"email": "officer@gem.gov", "password": "officer123"}
         Returns: {"access_token": "...", "token_type": "bearer", "expires_in": 3600}
     """
-    user = db.query(User).filter(User.email == body.email).first()
+    try:
+        user = db.query(User).filter(User.email == body.email).first()
+    except SQLAlchemyError as exc:
+        logger.error("Login unavailable because the database could not be queried: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Login is temporarily unavailable because PostgreSQL is not connected.",
+        ) from exc
     
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -327,7 +415,8 @@ def create_tender(
         raise HTTPException(status_code=401, detail="Unauthorized")
     
     # Get officer to get organization
-    officer = db.query(User).filter(User.id == officer_id).first()
+    officer_uuid = uuid.UUID(str(officer_id))
+    officer = db.query(User).filter(User.id == officer_uuid).first()
     if not officer:
         raise HTTPException(status_code=404, detail="Officer not found")
     
@@ -377,14 +466,7 @@ def publish_tender(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     
-    return TenderResponse(
-        id=str(tender.id),
-        title=tender.title,
-        status=tender.status,
-        created_by=str(tender.created_by),
-        organization_id=str(tender.organization_id),
-        created_at=tender.created_at.isoformat() if tender.created_at else None,
-    )
+    return serialize_tender_response(tender, db)
 
 
 @app.get("/api/officer/tenders", response_model=List[TenderResponse])
@@ -406,19 +488,7 @@ def list_officer_tenders(
         raise HTTPException(status_code=401, detail="Unauthorized")
     
     tenders = TenderService.list_officer_tenders(db, str(officer_id), limit, offset)
-    
-    return [
-        TenderResponse(
-            id=str(t.id),
-            title=t.title,
-            status=t.status,
-            created_by=str(t.created_by),
-            organization_id=str(t.organization_id),
-            version_number="1.0",  # Default to 1.0
-            created_at=t.created_at.isoformat() if t.created_at else None,
-        )
-        for t in tenders
-    ]
+    return [serialize_tender_response(t, db) for t in tenders]
 
 
 @app.get("/api/bidder/tenders", response_model=List[TenderResponse])
@@ -434,19 +504,7 @@ def list_published_tenders(
         Returns: List of published tenders
     """
     tenders = TenderService.list_published_tenders(db, limit, offset)
-    
-    return [
-        TenderResponse(
-            id=str(t.id),
-            title=t.title,
-            status=t.status,
-            created_by=str(t.created_by),
-            organization_id=str(t.organization_id),
-            version_number="1.0",
-            created_at=t.created_at.isoformat() if t.created_at else None,
-        )
-        for t in tenders
-    ]
+    return [serialize_tender_response(t, db) for t in tenders]
 
 
 @app.get("/api/bidder/tenders/{tender_id}", response_model=TenderResponse)
@@ -480,13 +538,14 @@ def create_bid(
         POST /api/bidder/tenders/550e8400-e29b-41d4-a716-446655440000/bids
         Returns: New bid in DRAFT state
     """
-    bidder = get_user_from_request(request)
-    bidder_id = bidder["id"]
+    bidder_data = get_user_from_request(request)
+    bidder_id = bidder_data["id"]
     if not bidder_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
     
     # Get bidder to get organization
-    bidder = db.query(User).filter(User.id == bidder_id).first()
+    bidder_uuid = uuid.UUID(str(bidder_id)) if isinstance(bidder_id, str) else bidder_id
+    bidder = db.query(User).filter(User.id == bidder_uuid).first()
     if not bidder or not bidder.organization_id:
         raise HTTPException(status_code=400, detail="Bidder organization not found")
     
@@ -494,9 +553,10 @@ def create_bid(
     tender_version = TenderService.get_latest_tender_version(db, tender_id)
     if not tender_version:
         # If no published version, get any version
+        tender_id_uuid = uuid.UUID(str(tender_id)) if isinstance(tender_id, str) else tender_id
         tender_version = (
             db.query(TenderVersion)
-            .filter(TenderVersion.tender_id == tender_id)
+            .filter(TenderVersion.tender_id == tender_id_uuid)
             .first()
         )
     
@@ -535,6 +595,7 @@ def create_bid(
         bidder_org_id=str(bid.bidder_org_id),
         status=bid.status,
         current_state=bid.current_state or "DRAFT",
+        compliance_status=getattr(bid, "compliance_status", "PENDING") or "PENDING",
         created_at=bid.created_at.isoformat() if bid.created_at else None,
     )
 
@@ -552,13 +613,14 @@ def list_bidder_bids(
         GET /api/bidder/bids?limit=20&offset=0
         Returns: List of bidder's bids
     """
-    bidder = get_user_from_request(request)
-    bidder_id = bidder["id"]
+    bidder_data = get_user_from_request(request)
+    bidder_id = bidder_data["id"]
     if not bidder_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
     
     # Get bidder to get organization
-    bidder = db.query(User).filter(User.id == bidder_id).first()
+    bidder_uuid = uuid.UUID(str(bidder_id)) if isinstance(bidder_id, str) else bidder_id
+    bidder = db.query(User).filter(User.id == bidder_uuid).first()
     if not bidder or not bidder.organization_id:
         raise HTTPException(status_code=400, detail="Bidder organization not found")
     
@@ -571,18 +633,32 @@ def list_bidder_bids(
         .all()
     )
     
-    return [
-        BidResponse(
-            id=str(bid.id),
-            tender_id=str(bid.tender_version.tender_id) if bid.tender_version else None,
-            tender_version_id=str(bid.tender_version_id),
-            bidder_org_id=str(bid.bidder_org_id),
-            status=bid.status,
-            current_state=bid.current_state or "DRAFT",
-            created_at=bid.created_at.isoformat() if bid.created_at else None,
+    result = []
+    for bid in bids:
+        tender_info = None
+        try:
+            tv = bid.tender_version
+            if tv:
+                t = tv.tender or db.query(Tender).filter(Tender.id == tv.tender_id).first()
+                if t:
+                    tender_info = {"id": str(t.id), "title": t.title}
+        except Exception:
+            pass
+
+        result.append(
+            BidResponse(
+                id=str(bid.id),
+                tender_id=str(bid.tender_version.tender_id) if bid.tender_version else None,
+                tender_version_id=str(bid.tender_version_id),
+                bidder_org_id=str(bid.bidder_org_id),
+                status=bid.status,
+                current_state=bid.current_state or "DRAFT",
+                compliance_status=getattr(bid, "compliance_status", "PENDING") or "PENDING",
+                created_at=bid.created_at.isoformat() if bid.created_at else None,
+                tender=tender_info,
+            )
         )
-        for bid in bids
-    ]
+    return result
 
 class CreateTenderRequest(BaseModel):
     title: str
@@ -926,61 +1002,6 @@ def get_bid_detail_officer(bid_id: str, request: Request, db: Session = Depends(
 # PHASE 0 & 1: BID ENDPOINTS (Bidder)
 # ============================================================================
 
-@app.get("/api/bidder/tenders")
-@require_role("bidder")
-def list_tenders_bidder(request: Request, db: Session = Depends(get_db)):
-    """Bidder views published tenders - Phase 0."""
-    tenders = db.query(Tender).filter(Tender.status == "published").all()
-    
-    result = []
-    for tender in tenders:
-        version = db.query(TenderVersion).filter(
-            TenderVersion.tender_id == tender.id,
-            TenderVersion.published_at != None,
-        ).order_by(TenderVersion.version_number.desc()).first()
-        
-        result.append({
-            "id": str(tender.id),
-            "title": tender.title,
-            "status": tender.status,
-            "organization": tender.created_by or "Government of India",
-            "version": version.version_number if version else "1.0",
-            "version_id": str(version.id) if version else None,
-            "clause_count": 3,
-            "required_documents": ["GST_CERT", "PAN", "COMPANY_REG"],
-            "published_at": version.published_at.isoformat() if version and version.published_at else None,
-        })
-    
-    return result
-
-@app.get("/api/bidder/tenders/{tender_id}")
-@require_role("bidder")
-def get_tender_detail_bidder(tender_id: str, request: Request, db: Session = Depends(get_db)):
-    """Bidder views tender details - Phase 0."""
-    tender = db.query(Tender).filter(Tender.id == tender_id).first()
-    if not tender:
-        raise HTTPException(status_code=404, detail="Tender not found")
-    
-    version = db.query(TenderVersion).filter(
-        TenderVersion.tender_id == tender_id,
-        TenderVersion.published_at != None,
-    ).order_by(TenderVersion.version_number.desc()).first()
-    
-    if not version:
-        raise HTTPException(status_code=404, detail="No published version found")
-    
-    return {
-        "id": str(tender.id),
-        "title": tender.title,
-        "status": tender.status,
-        "organization": tender.created_by or "Government of India",
-        "version": version.version_number if version else "1.0",
-        "version_id": str(version.id) if version else None,
-        "clause_count": 3,
-        "required_documents": ["GST_CERT", "PAN", "COMPANY_REG"],
-        "published_at": version.published_at.isoformat() if version and version.published_at else None,
-    }
-
 
 
 @app.put("/api/bidder/bids/{bid_id}")
@@ -1167,10 +1188,12 @@ async def upload_document(
     
     # Read file and compute hash
     contents = await file.read()
+    is_valid, error_msg = DocumentService.validate_file_upload(contents, file.filename or "")
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=f"File validation failed: {error_msg}")
     file_hash = hashlib.sha256(contents).hexdigest()
     
-    # Store file (mock)
-    file_path = f"/uploads/bids/{bid_id}/{doc_type}_{uuid.uuid4()}.pdf"
+    file_path = DocumentService.store_upload(contents, bid_id, doc_type, file.filename or "")
     
     # Create or upload new version
     existing_doc = db.query(Document).filter(
@@ -1290,7 +1313,8 @@ def verify_bid_stage1(bid_id: str, request: Request, db: Session = Depends(get_d
     if not bid:
         raise HTTPException(status_code=404, detail="Bid not found")
     
-    user = db.query(User).filter(User.id == bidder["id"]).first()
+    user_id_uuid = uuid.UUID(str(bidder["id"])) if isinstance(bidder["id"], (str, uuid.UUID)) else bidder["id"]
+    user = db.query(User).filter(User.id == user_id_uuid).first()
     if not user or bid.bidder_org_id != user.organization_id:
         raise HTTPException(status_code=403, detail="Not authorized")
     
@@ -1298,18 +1322,35 @@ def verify_bid_stage1(bid_id: str, request: Request, db: Session = Depends(get_d
     documents = db.query(Document).filter(Document.bid_id == bid_id_uuid).all()
     doc_types_uploaded = {doc.doc_type for doc in documents}
     
-    # Get tender requirements
-    tender = bid.tender
-    required_docs = {"GST", "PAN", "CERTIFICATE_OF_INCORPORATION"}  # Mock requirement
-    
-    uploaded_mandatory = len(doc_types_uploaded & required_docs)
-    total_mandatory = len(required_docs)
+    tender = (
+        db.query(Tender)
+        .join(TenderVersion, TenderVersion.tender_id == Tender.id)
+        .filter(TenderVersion.id == bid.tender_version_id)
+        .first()
+    )
+    requirements = get_tender_requirements(tender)
+    if not requirements:
+        requirements = [
+            {"doc_type": "GST_CERT", "title": "GST Certificate", "mandatory": True},
+            {"doc_type": "PAN", "title": "PAN Card", "mandatory": True},
+        ]
+    mandatory_requirements = [r for r in requirements if r.get("mandatory", True)]
+    uploaded_mandatory = sum(
+        1 for requirement in mandatory_requirements
+        if requirement["doc_type"] in doc_types_uploaded
+    )
+    total_mandatory = len(mandatory_requirements)
     
     return {
         "passed": uploaded_mandatory == total_mandatory,
         "slots": [
-            {"type": doc_type, "uploaded": doc_type in doc_types_uploaded}
-            for doc_type in required_docs
+            {
+                "type": requirement["doc_type"],
+                "title": requirement["title"],
+                "uploaded": requirement["doc_type"] in doc_types_uploaded,
+                "mandatory": requirement.get("mandatory", True),
+            }
+            for requirement in requirements
         ],
         "uploaded_mandatory": uploaded_mandatory,
         "total_mandatory": total_mandatory,
@@ -1326,18 +1367,30 @@ def verify_bid_stage2(bid_id: str, request: Request, db: Session = Depends(get_d
     if not bid:
         raise HTTPException(status_code=404, detail="Bid not found")
     
-    user = db.query(User).filter(User.id == bidder["id"]).first()
+    user_id_uuid = uuid.UUID(str(bidder["id"])) if isinstance(bidder["id"], (str, uuid.UUID)) else bidder["id"]
+    user = db.query(User).filter(User.id == user_id_uuid).first()
     if not user or bid.bidder_org_id != user.organization_id:
         raise HTTPException(status_code=403, detail="Not authorized")
     
     # Run eligibility checks
     compliance_results = []
     
-    # Mock compliance checks
+    tender = (
+        db.query(Tender)
+        .join(TenderVersion, TenderVersion.tender_id == Tender.id)
+        .filter(TenderVersion.id == bid.tender_version_id)
+        .first()
+    )
+    documents = db.query(Document).filter(Document.bid_id == bid_id_uuid).all()
+    uploaded_types = {document.doc_type for document in documents}
     checks = [
-        {"rule": "Must be registered on GeM", "passed": True},
-        {"rule": "No pending litigation", "passed": True},
-        {"rule": "Valid GST certificate", "passed": True},
+        {
+            "rule": requirement["title"],
+            "passed": requirement["doc_type"] in uploaded_types
+            or not requirement["mandatory"],
+            "document_type": requirement["doc_type"],
+        }
+        for requirement in get_tender_requirements(tender)
     ]
     
     passed = all(c["passed"] for c in checks)
@@ -1363,37 +1416,55 @@ def get_bid_readiness(bid_id: str, request: Request, db: Session = Depends(get_d
     if not bid:
         raise HTTPException(status_code=404, detail="Bid not found")
     
-    user = db.query(User).filter(User.id == bidder["id"]).first()
+    user_id_uuid = uuid.UUID(str(bidder["id"])) if isinstance(bidder["id"], (str, uuid.UUID)) else bidder["id"]
+    user = db.query(User).filter(User.id == user_id_uuid).first()
     if not user or bid.bidder_org_id != user.organization_id:
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    # Calculate readiness
+    tender = (
+        db.query(Tender)
+        .join(TenderVersion, TenderVersion.tender_id == Tender.id)
+        .filter(TenderVersion.id == bid.tender_version_id)
+        .first()
+    )
     documents = db.query(Document).filter(Document.bid_id == bid_id_uuid).all()
-    
+    requirements = get_tender_requirements(tender)
+    if not requirements:
+        requirements = [
+            {"doc_type": "GST_CERT", "title": "GST Certificate", "mandatory": True},
+            {"doc_type": "PAN", "title": "PAN Card", "mandatory": True},
+        ]
     requirements = [
-        {"requirement": "GST Certificate", "status": any(d.doc_type == "GST" for d in documents), "evidence": len([d for d in documents if d.doc_type == "GST"])},
-        {"requirement": "PAN Card", "status": any(d.doc_type == "PAN" for d in documents), "evidence": len([d for d in documents if d.doc_type == "PAN"])},
-        {"requirement": "Certificate of Incorporation", "status": any(d.doc_type == "CERTIFICATE_OF_INCORPORATION" for d in documents), "evidence": len([d for d in documents if d.doc_type == "CERTIFICATE_OF_INCORPORATION"])},
+        {
+            **requirement,
+            "status": any(d.doc_type == requirement["doc_type"] for d in documents),
+            "evidence": len([d for d in documents if d.doc_type == requirement["doc_type"]]),
+        }
+        for requirement in requirements
     ]
-    
-    satisfied = sum(1 for r in requirements if r["status"])
-    total = len(requirements)
+
+    mandatory_requirements = [r for r in requirements if r.get("mandatory", True)]
+    satisfied = sum(1 for r in mandatory_requirements if r["status"])
+    total = len(mandatory_requirements)
     readiness_percent = int((satisfied / total) * 100) if total > 0 else 0
     
     return {
         "readiness_percent": readiness_percent,
         "items": [
             {
-                "requirement": r["requirement"],
-                "status": "SATISFIED" if r["status"] else "MISSING",
+                "requirement": r["title"],
+                "document_type": r["doc_type"],
+                "status": "SATISFIED" if r["status"] else ("NOT_REQUIRED" if not r.get("mandatory", True) else "MISSING"),
                 "evidence_count": r["evidence"],
+                "mandatory": r.get("mandatory", True),
+                "description": r.get("description", ""),
             }
             for r in requirements
         ],
         "tender": {
-            "id": str(bid.tender_version_id),
-            "title": bid.tender.title if bid.tender else "Unknown",
-            "version": "1.0",
+            "id": str(tender.id) if tender else str(bid.tender_version_id),
+            "title": tender.title if tender else "Unknown",
+            "version": bid.tender_version.version_number if bid.tender_version else "1.0",
         },
     }
 
@@ -1408,7 +1479,8 @@ def get_bid_status(bid_id: str, request: Request, db: Session = Depends(get_db))
     if not bid:
         raise HTTPException(status_code=404, detail="Bid not found")
     
-    user = db.query(User).filter(User.id == bidder["id"]).first()
+    user_id_uuid = uuid.UUID(str(bidder["id"])) if isinstance(bidder["id"], (str, uuid.UUID)) else bidder["id"]
+    user = db.query(User).filter(User.id == user_id_uuid).first()
     if not user or bid.bidder_org_id != user.organization_id:
         raise HTTPException(status_code=403, detail="Not authorized")
     
@@ -1472,8 +1544,7 @@ async def upload_bid_document(
     # Compute file hash
     file_hash = DocumentService.compute_file_hash(contents)
     
-    # Store file (mock file path)
-    file_path = f"/uploads/bids/{bid_id}/{doc_type}_{uuid.uuid4()}.{file.filename.split('.')[-1]}"
+    file_path = DocumentService.store_upload(contents, bid_id, doc_type, file.filename or "")
     
     # Create or upload new version
     existing_doc = db.query(Document).filter(
@@ -1515,6 +1586,14 @@ async def upload_bid_document(
         str(document_id),
         bidder["id"],
     )
+    ocr_provider = BinaryOCRProvider.status()
+    if not ocr_provider.configured:
+        ocr_job.status = "FAILED"
+        ocr_job.error_message = ocr_provider.message
+        stored_document = db.query(Document).filter(Document.id == document_id).first()
+        if stored_document:
+            stored_document.ocr_status = "UNSUPPORTED"
+        db.commit()
     
     from app.schemas.common import DocumentUploadResponse
     return DocumentUploadResponse(
@@ -1522,7 +1601,11 @@ async def upload_bid_document(
         version_number=version.version_number,
         file_hash=file_hash,
         ocr_job_id=str(ocr_job.id),
-        message=f"Document uploaded and queued for OCR processing"
+        message=(
+            "Document uploaded and queued for OCR processing"
+            if ocr_provider.configured
+            else f"Document uploaded; OCR unavailable: {ocr_provider.message}"
+        )
     )
 
 
@@ -1574,7 +1657,9 @@ def get_document_ocr_status(doc_id: str, request: Request = None, db: Session = 
     # Verify authorization
     bidder_id_uuid = uuid.UUID(bidder["id"]) if isinstance(bidder["id"], str) else bidder["id"]
     user = db.query(User).filter(User.id == bidder_id_uuid).first()
-    if not user or doc.bid_id:
+    if not user:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    if doc.bid_id:
         bid = db.query(Bid).filter(Bid.id == doc.bid_id).first()
         if not bid or bid.bidder_org_id != user.organization_id:
             raise HTTPException(status_code=403, detail="Not authorized")
@@ -1613,7 +1698,12 @@ def verify_bid_stage1_v2(bid_id: str, request: Request = None, db: Session = Dep
         raise HTTPException(status_code=403, detail="Not authorized")
     
     # Get tender to check required documents
-    tender = db.query(Tender).filter(Tender.id == bid.tender_id).first()
+    tender = (
+        db.query(Tender)
+        .join(TenderVersion, TenderVersion.tender_id == Tender.id)
+        .filter(TenderVersion.id == bid.tender_version_id)
+        .first()
+    )
     required_docs = tender.required_documents if tender else []
     
     # Check which documents are uploaded
@@ -2100,6 +2190,10 @@ def get_adapters_status_v2(request: Request = None, db: Session = Depends(get_db
             "source": source_name,
             "enabled": adapter.enabled if hasattr(adapter, 'enabled') else True,
             "class": adapter.__class__.__name__,
+            "mode": getattr(adapter, "integration_mode", "UNKNOWN"),
+            "is_live": getattr(adapter, "integration_mode", None) == "LIVE",
+            "status_note": getattr(adapter, "status_note", None)
+                or getattr(adapter, "unavailable_reason", None),
         }
         adapter_statuses.append(status)
     
@@ -3255,10 +3349,22 @@ def drill_down_compliance_evidence(
 # ============================================================================
 
 from app.services.ocr_processor import OCRProcessor
+from app.services.document_ai import BinaryOCRProvider
 
 class ProcessOCRRequest(BaseModel):
     text_content: str
     doc_type_hint: Optional[str] = None
+
+@app.get("/api/ocr/status")
+def get_ocr_provider_status():
+    """Report binary OCR availability without exposing provider credentials."""
+    status = BinaryOCRProvider.status()
+    return {
+        "provider": status.name,
+        "configured": status.configured,
+        "status": "AVAILABLE" if status.configured else "UNAVAILABLE",
+        "message": status.message,
+    }
 
 @app.post("/api/officer/documents/{document_id}/ocr/process-text")
 @require_role("officer")
@@ -3275,26 +3381,32 @@ async def process_ocr_text(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     
-    # Create OCR job
-    job = OCRService.create_ocr_job(db, document_id, "PROCESSOR_V1")
+    # Create an OCR job using the persisted document-processing contract.
+    job = DocumentService.enqueue_ocr_job(db, document_id, officer["id"])
     
     # Process document
     result = await OCRProcessor.process_document(
         body.text_content,
         document_id,
-        body.doc_type_hint,
+        body.doc_type_hint or doc.doc_type,
     )
     
     # Update job
     if result["status"] == "COMPLETED":
-        job = OCRService.update_ocr_job(
-            db,
-            str(job.id),
-            "COMPLETED",
-            text_content=result.get("text_preprocessed"),
-            confidence_score=result.get("quality_score"),
-            raw_response=result,
-        )
+        job.status = "COMPLETED"
+        job.ocr_engine = "PROCESSOR_V1"
+        job.text_content = result.get("text_preprocessed")
+        job.extracted_text = result.get("text_preprocessed")
+        job.extracted_entities = {
+            field["field_name"]: field["field_value"]
+            for field in result.get("extracted_fields", [])
+        }
+        job.confidence_score = result.get("quality_score")
+        job.raw_response = result
+        job.completed_at = datetime.utcnow()
+        doc.ocr_status = "DONE"
+        doc.doc_type = result.get("document_type") or doc.doc_type
+        doc.classification_confidence = result.get("type_confidence")
         
         # Extract fields from result
         if "extracted_fields" in result:
@@ -3306,19 +3418,23 @@ async def process_ocr_text(
                     "evidence_span": field["evidence_span"],
                 }
             
-            OCRService.extract_fields(
-                db,
-                str(job.id),
-                fields_dict,
-                officer["id"],
-            )
+            for field in result["extracted_fields"]:
+                db.add(ExtractedFact(
+                    id=uuid.uuid4(),
+                    document_id=doc.id,
+                    field_name=field["field_name"],
+                    field_value=field["field_value"],
+                    source_page=1,
+                    evidence_span=field["evidence_span"],
+                    confidence=field["confidence"],
+                    meets_threshold=field["confidence"] >= 0.7,
+                ))
     else:
-        OCRService.update_ocr_job(
-            db,
-            str(job.id),
-            "FAILED",
-            error_message=result.get("error"),
-        )
+        job.status = "FAILED"
+        job.error_message = result.get("error")
+        doc.ocr_status = "FAILED"
+
+    db.commit()
     
     return {
         "job_id": str(job.id),

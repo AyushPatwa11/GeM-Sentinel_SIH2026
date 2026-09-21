@@ -51,7 +51,7 @@ export default function GovernmentSidebar({ userRole, isOpen, onClose }) {
 
       {/* Sidebar */}
       <aside
-        className={`fixed md:relative left-0 top-0 pt-20 md:pt-0 h-screen w-64 bg-white border-r border-line transition-transform duration-300 z-30 md:z-0 overflow-y-auto ${
+        className={`fixed md:sticky top-0 md:top-[98px] left-0 h-screen md:h-[calc(100vh-98px)] w-64 bg-white border-r border-line transition-transform duration-300 z-40 md:z-10 shrink-0 overflow-y-auto ${
           isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         }`}
       >

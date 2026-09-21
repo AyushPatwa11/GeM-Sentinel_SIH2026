@@ -71,6 +71,7 @@ export default function BidderReadiness() {
   const [message, setMessage] = useState(null);
   const [submitted, setSubmitted] = useState(false);
   const [bidStatus, setBidStatus] = useState(null);
+  const [selectedDocType, setSelectedDocType] = useState("");
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
 
@@ -93,6 +94,12 @@ export default function BidderReadiness() {
       ]);
       setReadiness(data);
       setDocuments(uploadedDocuments);
+      setSelectedDocType((current) => {
+        const availableTypes = (data.items || []).map((item) => item.document_type);
+        return availableTypes.includes(current)
+          ? current
+          : data.items?.find((item) => item.status === "MISSING")?.document_type || availableTypes[0] || "";
+      });
       setSubmitted(false);
       setMessage(null);
     } finally {
@@ -143,7 +150,14 @@ export default function BidderReadiness() {
     setUploading(true);
     setMessage(null);
     try {
-      const uploaded = await api.bidderUploadDocuments(bidId, files);
+      if (!selectedDocType) {
+        throw new Error("Select the requirement that these files fulfil before uploading.");
+      }
+      const uploaded = await api.bidderUploadDocuments(
+        bidId,
+        files,
+        files.map(() => selectedDocType)
+      );
       setDocuments((current) => [...current, ...uploaded]);
       await load(bidId);
       setMessage({
@@ -259,10 +273,27 @@ export default function BidderReadiness() {
                 onChange={handleUpload}
               />
 
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate">
+                Document requirement
+                <select
+                  value={selectedDocType}
+                  onChange={(event) => setSelectedDocType(event.target.value)}
+                  disabled={uploading || submitted}
+                  className="mt-1.5 w-full text-sm normal-case font-medium border border-line rounded-xl px-3 py-2.5 bg-white text-ink focus:outline-none focus:border-accent"
+                >
+                  <option value="">Select a requirement</option>
+                  {(readiness?.items || []).map((item) => (
+                    <option key={item.document_type} value={item.document_type}>
+                      {item.requirement}{item.mandatory ? " (mandatory)" : " (optional)"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={uploading || submitted || ["VERIFIED", "NON_COMPLIANT"].includes(bidStatus?.status)}
+                disabled={uploading || submitted || !selectedDocType || ["VERIFIED", "NON_COMPLIANT"].includes(bidStatus?.status)}
                 className="w-full text-xs font-semibold border border-line text-ink rounded-xl py-3 hover:bg-canvas transition-all flex items-center justify-center gap-2 disabled:opacity-40 cursor-pointer shadow-xs"
               >
                 <UploadCloud className="w-4 h-4 text-accent" />
