@@ -222,36 +222,25 @@ async def startup_event():
     from app.models.models import Base
     import sqlalchemy
     
+    # Create all tables from models if they don't exist
+    logger.info("Ensuring database tables exist...")
     try:
-<<<<<<< HEAD
-        Base.metadata.create_all(bind=engine)
-        seed_demo_data(db)
-    except SQLAlchemyError as exc:
-        logger.error(
-            "Database unavailable during startup seeding; API will start in "
-            "degraded mode: %s",
-            exc,
-        )
-    finally:
-        db.close()
-=======
-        # Create all tables from models if they don't exist
-        # This is safe for multi-worker deployments
-        logger.info("Ensuring database tables exist...")
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables ready")
+        db = SessionLocal()
+        try:
+            seed_demo_data(db)
+        finally:
+            db.close()
     except sqlalchemy.exc.ProgrammingError as e:
-        # This can happen in multi-worker scenarios - tables already created
         if "already exists" in str(e) or "duplicate key" in str(e):
             logger.info("Tables already exist (multi-worker creation race)")
         else:
-            logger.warning(f"Database error: {str(e)}")
+            logger.warning(f"Database warning: {str(e)}")
     except Exception as e:
         logger.warning(f"Could not ensure tables: {str(e)}")
     
-    # Skip seeding for now - it uses too much memory on free tier
     logger.info("Application startup complete")
->>>>>>> 253af92bbffbde143648eba039fcaa194209f1e5
 
 # ============================================================================
 # HEALTH & INFO
