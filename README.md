@@ -411,5 +411,5 @@ Per the official guidelines of **Smart India Hackathon 2026 Problem Statement #2
 ---
 
 <div align="center">
-  <sub>Built with precision for India's public procurement ecosystem. © 2026 GeM Sentinel Team.</sub>
+  <sub>Built with precision for India's public procurement ecosystem. © 2026 Team Photons.</sub>
 </div>
